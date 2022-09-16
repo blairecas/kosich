@@ -27,7 +27,6 @@ START:	.print	#MSG000			; helloworld!!111one
 	beq	10$
 	.exit
 10$:	; prepare
-	;mtps	#200			; do we need to stop interrupts?
 	.print	#MSGCLS			; clear screen with ESC-codes		
 
 	; adjust vaddr start and end (align them with 128 bytes)
@@ -49,8 +48,8 @@ START:	.print	#MSG000			; helloworld!!111one
 	mov	#VSYNCI, @#100
 
 	; set PPU flag to 'running' and call Manwe's drawing procedure
-	inc	PPCOMM
-	clr	TICK50
+	inc	PPCOMM			; PPU will clear this after key is pressed
+	clr	TICK50			; clear vsync ticks counter (do we really need that?)
 
 	; go go go...
 	call	INTRO
@@ -60,8 +59,6 @@ START:	.print	#MSG000			; helloworld!!111one
 
 	; clear PPU RAM and exit
 	call	PPRELE			; release PPU memory
-	;mtps	#0
-	;.ttyin				; 'eat' pressed key
 
 	; output FPS = FRAMES * 50 / TICKS
 	.print	#MSGFPS
@@ -72,7 +69,7 @@ START:	.print	#MSG000			; helloworld!!111one
 	mov	R1, -(SP)
 	call	PRINTD		; print integer part
 	.ttyout	#'.		; .
-	mov	(SP)+, R0	; R0=ticks%TICK50
+	mov	(SP)+, R0	; convert %TICK50 to hundreds
 	mul	#100., R0	; *100/TICK50 = hundreds
 	div	TICK50, R0	;
 	call	PRIN00
@@ -261,6 +258,7 @@ GTVADR:	mov	#VBUF, R1
 ; 'keyboard' interrupt
 INTKB1:	mov	R0, -(SP)
 	mov	@#177702, R0
+	; TODO: change drawing variables in CPU from pressed keys
 	inc	KEYPR0
 	mov	(SP)+, R0
 	rti
