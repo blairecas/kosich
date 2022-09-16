@@ -1,0 +1,346 @@
+	.mcall	.print .ttyin .fetch .looku .readw .close .exit
+	.enabl	LC
+	.list	MEB	; enable macro-extensions binary listing
+
+VADDR = 10000
+
+PPCOMM:	.word	0	; PPU command
+
+MSG000:	.asciz	<12>/Adaptation of Kosi4ka BK-0010 256-byte intro by Manwe\SandS. Run Y/<57>/[N]?/
+MSG010:	.asciz	/ERR: PPU allocate memory failed/
+MSGCLS: .byte	033, 014, 110, 0
+	.even
+
+; //////////////////////////////////////////////////////////////////////////////
+; // START
+; //////////////////////////////////////////////////////////////////////////////
+
+START:	.print	#MSG000			; helloworld!!111one
+	bis	#10000, @#44		; don't echo keys
+	.ttyin				; input char -> R0
+	cmp	R0, #131		; Y char
+	beq	10$
+	.exit
+10$:	; prepare
+	mtps	#200			; do we need to stop interrupts?
+	.print	#MSGCLS			; clear screen with ESC-codes		
+
+	; run PPU code
+	mov	#1, PPCOMM		; ask PPU for 'phase 1 ready'
+	mov	#PPUSTA, R4		; run PPU code
+	mov	#<PPUEND-PPUSTA/2>, R5
+	call	PPRUN
+	tst	PPCOMM			; wait for 'ppu phase 1 ready'
+	bne	.-4			; TODO: check timer to not wait forever?
+
+	; set PPU flag to 'running' and call Manwe's drawing procedure
+	inc	PPCOMM
+	call	INTRO
+	
+	; clear PPU RAM and exit
+	call	PPRELE			; release PPU memory
+	mtps	#0
+	.ttyin				; 'eat' pressed key
+	.exit
+
+; //////////////////////////////////////////////////////////////////////////////
+; // CPU -> PPU exchange	
+; //////////////////////////////////////////////////////////////////////////////
+
+; PPU message
+;
+PPMSG:	.WORD	PPARR	; address of beginning of array
+        .WORD	177777	; end of transmission
+
+; PPU data exchange array
+;
+PPARR:	.BYTE	0	; return value (0 - OK)
+PPCMD:	.BYTE	0	; command
+	.WORD	32	; device type (32 - PPU mem)
+PPAPP:	.WORD	0	; address for PPU
+PPACP:	.WORD	0	; address for CPU
+PPLEN:	.WORD	0	; length in words
+
+; send command to PPU with exch array
+PPSEN:	mov	R0, -(SP)
+	mov	R1, -(SP)
+	mov	#PPMSG, R0	; array address
+	mov	#5, R1		; bytes to send+1 (sending from @#PP_MSG)
+	br	1$
+2$:	movb	(R0)+, @#176676
+1$:	tstb	@#176674	; test if we are ready to send
+	bpl	1$		; cycle if >= 0 (not set last bit in byte)
+	sob	R1, 2$
+	mov	(SP)+, R1
+	mov	(SP)+, R0
+	return
+
+; send and start PPU code
+; R4 - start addr in CPU
+; R5 - length / 2
+PPRUN:	movb	#1, PPCMD	; 1 - allocate memory
+	mov	R5, PPLEN
+	call	PPSEN
+	tstb	PPARR		; test if allocate success
+	beq	1$		; 0 - OK
+	.print	#MSG010
+	.exit			; fatal error - out of memory in PPU
+1$:	movb	#20, PPCMD	; 20 - write to PPU mem
+	mov	R5, PPLEN
+	mov 	R4, PPACP
+	call	PPSEN
+	movb	#30, PPCMD	; 30 - run
+	call	PPSEN
+	return
+
+; release PPU memory in case of something..
+PPRELE:	movb	#2, PPCMD	; 2 - release memory
+	call	PPSEN
+	return
+
+
+; //////////////////////////////////////////////////////////////////////////////	
+; // PPU first phase 
+; //////////////////////////////////////////////////////////////////////////////
+
+PPUSTA:	mov	PC, R0
+	add	#INTKB1-., R0		; keyboard interrupt addr
+	mov	@#300, BKW300		; replace keyboard interrupt
+	mov	R0, @#300
+	; construct our own lines table	
+	mov	PC, R0
+	add	#PPLIN1-., R0
+	add	#10, R0			; align addr with 8. bytes
+	bic	#7, R0
+	mov	R0, R2			; save addr and use later
+	; 1st element - set palette (YRGB YRGB YRGB YRGB)
+	;                           (0011 0010 0001 0000)
+	;                           (0111 0110 0101 0100)
+	mov	#^B1001100110001000, (R0)+
+	mov	#^B1100110010101010, (R0)+
+	clr	(R0)+			; vaddr is not used here
+	mov	R0, (R0)		; next element addr
+	add	#2, (R0)
+	bis	#2, (R0)+		; #2 = 010 - next element is scale&cursor
+	; 2nd line - set scale, lumi and cursor
+	mov	#^B0000000000010000, (R0)+ ; no cursor
+	mov	#^B0000000000000111, (R0)+ ; 640x288, max luminance (..00111-640, ..10111 - 320)
+	clr	(R0)+			; vaddr is not used here
+	mov	R0, (R0)
+	add	#2, (R0)+		; next element is 2-words
+	; 16 not used lines
+	mov	#16., R3
+10$:	clr	(R0)+
+	mov	R0, (R0)
+	add	#2, (R0)+
+	sob	R3, 10$
+	; 16 'empty' lines (BK-0010 is 256 lines screen, so 288-256/2 = 16
+	mov	#16., R3
+20$:	mov	#VADDR/2, (R0)+
+	mov	R0, (R0)
+	add	#2, (R0)+
+	sob	R3, 20$
+	; next 256 'main' lines
+	mov	#VADDR/2, R1
+	mov	#256., R3
+30$:	mov	R1, (R0)+
+	mov	R0, (R0)
+	add	#2, (R0)+
+	add	#64., R1		; double BK-0010 scr width
+	sob	R3, 30$
+	; last 16 empty lines
+	mov	#16., R3
+40$:	mov	#VADDR/2, (R0)+
+	mov	R0, (R0)
+	add	#2, (R0)+
+	sob	R3, 40$
+	; set new lines table
+	mov	@#270, BKW270		; backup old table
+	mov	@#272, BKW272
+	clr	@#270
+	bis	#6, R2			; first line is palette 
+	mov	R2, @#272		; saved addr
+	; queue process
+	mov	PC, R0			; get proc addr
+	add	#PPPGM1-., R0		;
+	mov	R0, ADPGM1		; save for later use
+	mov	R0, @#7124		; 7104.. (24(8) bytes) - processes addrs
+	mov	#1, @#7100		; 7060.. (24(8) bytes) - processes status, 1-run
+	; clear current command (phase 1 ready)
+	mov	#PPCOMM/2, @#177010
+	clr	@#177014
+	return
+
+; 'keyboard' interrupt
+INTKB1:	inc	KEYPR0
+	rti
+KEYPR0:	.word	0
+
+; 'backup' values
+BKW270:	.WORD	0
+BKW272:	.WORD	0
+BKW300:	.WORD	0
+
+; lines table data
+PPLIN1:	.BLKW	1200			; need 1150 (616.) words, but for .even 10 and whatever
+
+; //////////////////////////////////////////////////////////////////////////////
+; // PPU Process
+; //////////////////////////////////////////////////////////////////////////////
+
+ADPGM1:	.WORD	0			; address of process
+
+PPPGM1:	mov	R0, -(SP)		; need to save R0 for PPU process
+	tst	KEYPR0			; test for keypress to abort
+	bne	10$			;
+	; return to dispatcher
+	mov	ADPGM1, @#7124		; re-queue process
+	mov	#1, @#7100		; set for execution
+99$:	mov	(SP)+, R0		; restore R0 (needed for dispatcher)
+	jmp	@#174170		; jump to process dispatcher
+10$:	; abort PPU process
+	mov	BKW270, @#270		; restore lines table addr
+	mov	BKW272, @#272
+	mov	BKW300, @#300		; restore kbd interrupt
+	clr	@#7100			; do not execute process again
+	mov	#PPCOMM/2, @#177010	; control word addr
+	clr	@#177014		; clear it
+	br	99$
+
+; //////////////////////////////////////////////////////////////////////////////
+; // END PPU CODE 
+; //////////////////////////////////////////////////////////////////////////////
+PPUEND:
+
+	
+; //////////////////////////////////////////////////////////////////////////////
+; // Manwe/SandS code here
+; //////////////////////////////////////////////////////////////////////////////
+INTRO:
+
+TablSi	= 64.
+Angle	= 16.				; Cos offset
+Variab	= Accums+6
+
+Speed:	br	Begin			; Y
+	.word	36543,1321		; timer2, timer1
+Accums:
+
+Begin:
+	; Clone sine table
+	mov	#Tabl+32., R1		; pointer to sine table
+	mov	#32., R2
+1$:	movb	Tabl-1(R2), (R1)+
+	sob	R2, 1$
+
+	; clear screen (originally was from the end of code to 100000)
+	mov	#VADDR, R1
+	mov	#256.*64., R3
+2$:	clr	(R1)+
+	sob	R3, 2$
+
+Loop:	mov	#Accums, R3
+	clr	(R3)+			; clear accums
+	clr	(R3)+
+	tst	(R3)+
+	mov	#100, R0		; mask
+Direct:	incb	(R3)			; default Y
+	bne	1$
+	xor	R0, Direct		; DEC opcode: 5313, INC opcode: 5213
+1$:	mov	(R3)+, (R3)		; set Y
+	mov	(R3)+, (R3)		; set timer2
+	mov	#VADDR+420, R0 		; screen address
+
+	; render twister to screen
+Render:
+	mov	#Speed, R4
+	mov	#3, R3
+10$:	add	(R4)+, 4(R4)		; add speed to accum
+	adc	14(R4)			; increment variable
+	sob	R3, 10$
+	
+	mov	#Variab+6, R3		; pointer to variable array
+	mov	(R3), R4		; get timer 1
+	call	Sin
+	swab	R5
+	asl	R5
+	mov	R5, Speed		; Y speed
+
+	mov	-(R3), R4		; get timer 2
+	call	Sin
+	add	#64., R5		; shift from left side
+	asr	R5
+	asr	R5
+	asl	R5			; in UKNC we are in WORDs
+	mov	R5, R2			; horisontal shift
+
+	mov	-(R3), R4		; get Y
+
+	mov	R0, -(SP)		; set maximum
+	mov	R0, -(SP)
+	add	#176, (SP)		; set minimum
+
+	mov	#8., R3
+3$:	call	Sin			; R5=Sin(R4)
+	mov	R5, R1
+	asr	R1			; left coordinate
+	add	#Angle, R4		; 90 degrees offset
+	call	Sin			; R5=Sin(R4)
+	asr	R5			; right coordinate
+	sub	R1, R5			; length
+	ble	7$
+	bic	#177, R0		; new screen line
+	add	R2, R0			; horisontal shift
+	add	R1, R0
+	add	R1, R0
+	cmp	R0, (SP)		; minimum
+	bgt	4$
+	mov	R0, (SP)		; set new minimum
+4$:	mov	Color-2(R3), R1		; read colour
+5$:	mov	R1, (R0)+
+	sob	R5, 5$
+	cmp	R0, 2(SP)		; maximum
+	blos	6$
+	mov	R0, 2(SP)		; set new maximum
+6$:	bis	#^B1111000011110000, -(R0)		; draw border
+7$:	dec	R3
+	sob	R3, 3$
+
+	mov	(SP)+, R5		; get minimum
+	clr	-(R5)			; erase left pixels
+	clr	-(R5)
+	clr	-(R5)
+	clr	-(R5)
+	mov	(SP)+, R5		; get maxumum
+	clr	(R5)+			; erase right pixels
+	clr	(R5)+
+	clr	(R5)+			; added one more clear
+	clr	(R5)
+
+	add	#256., R0		; +2 screen lines
+	cmp	R0, #VADDR+100000
+	blo	Render			; end of screen?
+
+	tst	PPCOMM			; +++ test for PPU asking to abort
+	bne	Loop			; next frame if not
+
+	return
+
+; Sinus
+; input: R4 - angle
+; outpu: R5 - sinus
+Sin:	mov	R4, R5
+	bic	#177700, R5
+	movb	Tabl(R5), R5
+	return
+
+	; were bytes 231,167,252,273
+Color:	.word	^B1010101001010101, ^B0101010111111111
+	.word	^B1111111100000000, ^B1111111101010101
+
+Tabl:	.byte	63.,62.,62.,61.,60.,58.,56.,54.,52.,50.,48.,45.,42.,39.,37.,33.
+	.byte	31.,28.,25.,22.,19.,17.,14.,12.,10.,8.,6.,4.,3.,2.,2.,1.
+ 
+	.blkw	32.	; buffer for sinetable cloning (not much need, but just in case)
+
+	.END	START
