@@ -9,7 +9,7 @@
 		"type": "cppvsdbg",
                 "request": "launch",
                 "program": "${workspaceFolder}/../../emustudio/emustudio.exe",
-                "args": ["${workspaceFolder}/descnt.dsk"],
+                "args": ["${workspaceFolder}/kosich.dsk"],
                 "stopAtEntry": false,
                 "cwd": "${workspaceFolder}",
                 "environment": [],

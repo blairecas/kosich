@@ -1,14 +1,19 @@
-	.mcall	.print .ttyin .fetch .looku .readw .close .exit
+	.mcall	.print .ttyin .ttyout .fetch .looku .readw .close .exit
 	.enabl	LC
 	.list	MEB	; enable macro-extensions binary listing
 
-VADDR = 10000
+VADDR:	.word	0	; video addr
+VADEN:	.word	0	; video addr + 100000
 
 PPCOMM:	.word	0	; PPU command
+TICK50:	.word	0	; 50Hz ticks counter
+FRAMES:	.word	0	; frames counter
+VSIOLD:	.word	0	; old vsync interrupt addr
 
-MSG000:	.asciz	<12>/Adaptation of Kosi4ka BK-0010 256-byte intro by Manwe\SandS. Run Y/<57>/[N]?/
+MSG000:	.asciz	<12>/Adaptation of Kosi4ka BK-0010 256-byte intro by Manwe/<57>/SandS. Run Y/<57>/[N]?/
 MSG010:	.asciz	/ERR: PPU allocate memory failed/
 MSGCLS: .byte	033, 014, 110, 0
+MSGFPS:	.asciz	/FPS:/
 	.even
 
 ; //////////////////////////////////////////////////////////////////////////////
@@ -22,8 +27,15 @@ START:	.print	#MSG000			; helloworld!!111one
 	beq	10$
 	.exit
 10$:	; prepare
-	mtps	#200			; do we need to stop interrupts?
+	;mtps	#200			; do we need to stop interrupts?
 	.print	#MSGCLS			; clear screen with ESC-codes		
+
+	; adjust vaddr start and end (align them with 128 bytes)
+	mov	#VBUF, VADDR
+	add	#128., VADDR
+	bic	#^B01111111, VADDR
+	mov	VADDR, VADEN
+	add	#100000, VADEN
 
 	; run PPU code
 	mov	#1, PPCOMM		; ask PPU for 'phase 1 ready'
@@ -33,15 +45,81 @@ START:	.print	#MSG000			; helloworld!!111one
 	tst	PPCOMM			; wait for 'ppu phase 1 ready'
 	bne	.-4			; TODO: check timer to not wait forever?
 
+	mov	@#100, VSIOLD
+	mov	#VSYNCI, @#100
+
 	; set PPU flag to 'running' and call Manwe's drawing procedure
 	inc	PPCOMM
+	clr	TICK50
+
+	; go go go...
 	call	INTRO
-	
+
+	; restore vsync interrupt
+	mov	VSIOLD, @#100
+
 	; clear PPU RAM and exit
 	call	PPRELE			; release PPU memory
-	mtps	#0
-	.ttyin				; 'eat' pressed key
+	;mtps	#0
+	;.ttyin				; 'eat' pressed key
+
+	; output FPS = FRAMES * 50 / TICKS
+	.print	#MSGFPS
+	mov	FRAMES, R0
+	mul	#50., R0
+	div	TICK50, R0
+	; R0=FPS R1=FPS%TICK50
+	mov	R1, -(SP)
+	call	PRINTD		; print integer part
+	.ttyout	#'.		; .
+	mov	(SP)+, R0	; R0=ticks%TICK50
+	mul	#100., R0	; *100/TICK50 = hundreds
+	div	TICK50, R0	;
+	call	PRIN00
+	
+	.ttyout	#10.
+	.ttyout #13.
+
 	.exit
+
+; 50Hz interrupt
+VSYNCI:	inc	TICK50
+	rti
+
+; various prints from R0
+; print decimal 5-digits with leading zeroes
+P00000:	mov	#5, R3
+PrintP:	mov	#Pri000+5, R5
+1$:	mov	R0, R1
+	clr	R0
+	div	#10., R0
+	add	#'0, R1
+	movb	R1, -(R5)
+	sob	R3, 1$
+PriOut:	movb	(R5)+, R0
+	beq	3$
+	.ttyout
+	br	PriOut
+3$:	return
+; print decimal without leading zeroes
+PrintD:	mov	#Pri000+5, R5
+1$:	mov	R0, R1
+	clr	R0
+	div	#10., R0
+	add	#'0, R1
+	movb	R1, -(R5)
+	tst	R0
+	bne	1$
+	br	PriOut
+; print decimal 00-99 with leading zeroes
+Prin00:	cmp	R0, #99.
+	blos	1$
+	.print	#Error
+	.exit
+1$:	mov	#2, R3
+	br	PrintP
+Pri000:	.ASCIZ	/00000/
+Error:	.ASCIZ	/Print Error/
 
 ; //////////////////////////////////////////////////////////////////////////////
 ; // CPU -> PPU exchange	
@@ -136,12 +214,13 @@ PPUSTA:	mov	PC, R0
 	sob	R3, 10$
 	; 16 'empty' lines (BK-0010 is 256 lines screen, so 288-256/2 = 16
 	mov	#16., R3
-20$:	mov	#VADDR/2, (R0)+
+	call	GTVADR			; R1 <- VADDR
+20$:	mov	R1, (R0)+
 	mov	R0, (R0)
 	add	#2, (R0)+
 	sob	R3, 20$
 	; next 256 'main' lines
-	mov	#VADDR/2, R1
+	call	GTVADR
 	mov	#256., R3
 30$:	mov	R1, (R0)+
 	mov	R0, (R0)
@@ -149,8 +228,9 @@ PPUSTA:	mov	PC, R0
 	add	#64., R1		; double BK-0010 scr width
 	sob	R3, 30$
 	; last 16 empty lines
+	call	GTVADR
 	mov	#16., R3
-40$:	mov	#VADDR/2, (R0)+
+40$:	mov	R1, (R0)+
 	mov	R0, (R0)
 	add	#2, (R0)+
 	sob	R3, 40$
@@ -171,8 +251,18 @@ PPUSTA:	mov	PC, R0
 	clr	@#177014
 	return
 
+; get current VADDR/2 in R1
+GTVADR:	mov	#VBUF, R1
+	add	#128., R1
+	bic	#^B01111111, R1
+	asr	R1
+	return
+
 ; 'keyboard' interrupt
-INTKB1:	inc	KEYPR0
+INTKB1:	mov	R0, -(SP)
+	mov	@#177702, R0
+	inc	KEYPR0
+	mov	(SP)+, R0
 	rti
 KEYPR0:	.word	0
 
@@ -234,7 +324,7 @@ Begin:
 	sob	R2, 1$
 
 	; clear screen (originally was from the end of code to 100000)
-	mov	#VADDR, R1
+	mov	VADDR, R1
 	mov	#256.*64., R3
 2$:	clr	(R1)+
 	sob	R3, 2$
@@ -249,7 +339,8 @@ Direct:	incb	(R3)			; default Y
 	xor	R0, Direct		; DEC opcode: 5313, INC opcode: 5213
 1$:	mov	(R3)+, (R3)		; set Y
 	mov	(R3)+, (R3)		; set timer2
-	mov	#VADDR+420, R0 		; screen address
+	mov	VADDR, R0 		; screen address
+	add	#420, R0
 
 	; render twister to screen
 Render:
@@ -318,8 +409,10 @@ Render:
 	clr	(R5)
 
 	add	#256., R0		; +2 screen lines
-	cmp	R0, #VADDR+100000
+	cmp	R0, VADEN
 	blo	Render			; end of screen?
+
+	inc	FRAMES			; for FPS counting
 
 	tst	PPCOMM			; +++ test for PPU asking to abort
 	bne	Loop			; next frame if not
@@ -342,5 +435,8 @@ Tabl:	.byte	63.,62.,62.,61.,60.,58.,56.,54.,52.,50.,48.,45.,42.,39.,37.,33.
 	.byte	31.,28.,25.,22.,19.,17.,14.,12.,10.,8.,6.,4.,3.,2.,2.,1.
  
 	.blkw	32.	; buffer for sinetable cloning (not much need, but just in case)
+
+VBUF:	.blkb	100000+256.	; I know it lol
+	.word	123456
 
 	.END	START
