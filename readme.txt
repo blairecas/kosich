@@ -2,6 +2,9 @@ KOSICH
 ======
 
 Adaptation for UKNC (MS-0511) computer from 256-byte BK-0010 demo.
+Use disk image kosich.dsk with UKNC emulator (it will autolaunch).
+Or copy /release/kosich.sav to your disk image.
+
 Original readme.txt is:
 
   "Kocu4ka" 256-byte intro for
