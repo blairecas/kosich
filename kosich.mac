@@ -559,8 +559,6 @@ Lfsr03:	mov	Lfsr00, R0
 ; // Buffers, video RAM and whatever
 ; ///////////////////////////////////////////////////////////////////////////////////
 
-.psect ZZZZZZ, D
-
 D2BUF1:	.blkw	D2BWid*D2BWid
 D2BUF2:	.blkw	D2BWid*D2BWid
 D2BUFE:
