@@ -16,7 +16,7 @@ DEMTAB:	.word	KOSICH, RIPLES
 
 MSG000:	.ascii	<12>/Demo select:/<12><15>
 	.ascii	/1 - Adaptation of Kosi4ka BK-0010 256-byte intro by Manwe/<57>/SandS/<12><15>
-	.ascii	/2 - Ripples/<12><15><0>
+	.ascii	/2 - Ripples/<12><15>
 	.asciz	/0 - Exit/<12><15>
 MSG010:	.asciz	/ERR: PPU allocate memory failed/
 MSGCLS: .byte	033, 014, 110, 0
@@ -464,10 +464,6 @@ D2COLR:	.word	^B0000000000010000, ^B0001000100000000, ^B0010010100000000, ^B0101
 
 D2BWid = 48.
 
-D2BUF1:	.blkw	D2BWid*D2BWid
-D2BUF2:	.blkw	D2BWid*D2BWid
-D2BUFE:
-
 Riples:
 	; clear buffers
 	mov	#D2BUF1, R0
@@ -560,10 +556,15 @@ Lfsr03:	mov	Lfsr00, R0
 
 
 ; ///////////////////////////////////////////////////////////////////////////////////
-; // Video buffer in RAM
+; // Buffers, video RAM and whatever
 ; ///////////////////////////////////////////////////////////////////////////////////
 
+.psect ZZZZZZ, D
+
+D2BUF1:	.blkw	D2BWid*D2BWid
+D2BUF2:	.blkw	D2BWid*D2BWid
+D2BUFE:
+
 VBUF:	.blkb	100000+256.	; I know it lol
-	.word	123456
 
 	.END	START
