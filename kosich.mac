@@ -474,9 +474,9 @@ Riples:
 RiplRN:	; render frame
 
 D2BPRO:	; process buffers
-	mov	#D2BWid*2+2+D2BUF1, R4
-	mov	#D2BWid*2+2+D2BUF2, R5
-	bit	#1, FRAMES
+	mov	#D2BWid*2+2+D2BUF1, R4	; 'previous' buffer addr
+	mov	#D2BWid*2+2+D2BUF2, R5	; 'current' buffer addr
+	bit	#1, FRAMES		; every frame they must be swapped
 	beq	2$
 	xor	R4, R5			; swap registers
 	xor	R5, R4
@@ -484,23 +484,23 @@ D2BPRO:	; process buffers
 2$:	; R4 - 'previous' buffer addr, R5 - 'current' buffer addr
 
 	; add random dot in 'previous'
-	bit	#11, FRAMES
-	beq	10$
-	call	Random
+;	bit	#1, FRAMES		; i think it's ok for every frame
+;	beq	10$
+	call	Random			; R0 <- random word
 	bic	#^B1111111111100000, R0	; R0 <- 0..31 random Y
-	add	#7., R0
+	add	#7., R0			; add some shift (need to use D2BWid though)
 	mul	#D2BWid*2, R0		; R1 <- buf addr by random line
 	call	Random
 	bic	#^B1111111111000001, R0	; R0 <- 0..62 (even) random X
-	add	#16., R0		; center it
+	add	#16., R0		; center it by X (yes, need to use D2BWin also)
 	add	R0, R1
 	add	R4, R1
 	mov	#31., (R1)
 
-10$:	; process
-	mov	R5, -(SP)
-	mov	#D2BWid-2, R2
-20$:	mov	#D2BWid-2, R3
+10$:	; process waves in two buffers
+	mov	R5, -(SP)		; store addr of 'current' drawing buffer
+	mov	#D2BWid-2, R2		; we have buffers by 1 element larger than screen render
+20$:	mov	#D2BWid-2, R3		; so - process only 'inner' side
 30$:	mov	2(R4), R0
 	add	-2(R4), R0
 	add	D2BWid*2(R4), R0
@@ -514,15 +514,15 @@ D2BPRO:	; process buffers
 	inc	R4
 	inc	R4
 	sob	R3, 30$
-	add	#4., R4
+	add	#4., R4			; skip buffer borders (2 words in beg and end)
 	add	#4., R5
 	sob	R2, 20$
 
 D2REND:	; render 'current' buffer to screen
-	mov	(SP)+, R5		; rewind 'current' addr
+	mov	(SP)+, R5		; restore 'current' addr
 	mov	VADDR, R0
-	add	#128.*32.+32., R0
-	mov	#256., R4		; +2 screen lines
+	add	#128.*32.+32., R0	; skip some lines at screen (must use D2BWin also)
+	mov	#256., R4		; +2 screen lines addition register
 	mov	#D2BWid-2, R2
 20$:	mov	#D2BWid-2, R3
 30$:	mov	(R5)+, R1
@@ -534,7 +534,7 @@ D2REND:	; render 'current' buffer to screen
 	sub	#256.-2, R0
 	sob	R3, 30$
 	add	#4, R5			; skip buffer borders
-	add	#<128.*4>-<D2BWid-2*2>, R0
+	add	#<128.*4>-<D2BWid-2*2>, R0	; next screen chunk line
 	sob	R2, 20$
 
 	inc	FRAMES
