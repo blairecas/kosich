@@ -4,13 +4,20 @@
 
 VADDR:	.word	0	; video addr
 VADEN:	.word	0	; video addr + 100000
+DEMNUM:	.word	0	; demo number
 
 PPCOMM:	.word	0	; PPU command
 TICK50:	.word	0	; 50Hz ticks counter
 FRAMES:	.word	0	; frames counter
 VSIOLD:	.word	0	; old vsync interrupt addr
 
-MSG000:	.asciz	<12>/Adaptation of Kosi4ka BK-0010 256-byte intro by Manwe/<57>/SandS. Run Y/<57>/[N]?/
+; demos addresses
+DEMTAB:	.word	KOSICH, RIPLES
+
+MSG000:	.ascii	<12>/Demo select:/<12><15>
+	.ascii	/1 - Adaptation of Kosi4ka BK-0010 256-byte intro by Manwe/<57>/SandS/<12><15>
+	.ascii	/2 - Ripples/<12><15><0>
+	.asciz	/0 - Exit/<12><15>
 MSG010:	.asciz	/ERR: PPU allocate memory failed/
 MSGCLS: .byte	033, 014, 110, 0
 MSGFPS:	.asciz	/FPS:/
@@ -22,11 +29,17 @@ MSGFPS:	.asciz	/FPS:/
 
 START:	.print	#MSG000			; helloworld!!111one
 	bis	#10000, @#44		; don't echo keys
-	.ttyin				; input char -> R0
-	cmp	R0, #131		; Y char
-	beq	10$
+2$:	.ttyin				; input char -> R0
+	cmp	R0, #'0
+	blo	2$
+	cmp	R0, #'2
+	bhi	2$
+	sub	#'0, R0
+	bne	10$
 	.exit
+
 10$:	; prepare
+	mov	R0, DEMNUM		; demo number
 	.print	#MSGCLS			; clear screen with ESC-codes		
 
 	; adjust vaddr start and end (align them with 128 bytes)
@@ -35,6 +48,11 @@ START:	.print	#MSG000			; helloworld!!111one
 	bic	#^B01111111, VADDR
 	mov	VADDR, VADEN
 	add	#100000, VADEN
+	; clear vbuf
+	mov	VADDR, R1
+	mov	#256.*64., R3
+	clr	(R1)+
+	sob	R3, .-2
 
 	; run PPU code
 	mov	#1, PPCOMM		; ask PPU for 'phase 1 ready'
@@ -43,21 +61,24 @@ START:	.print	#MSG000			; helloworld!!111one
 	call	PPRUN
 	tst	PPCOMM			; wait for 'ppu phase 1 ready'
 	bne	.-4			; TODO: check timer to not wait forever?
+	; set PPU flag to 'running'
+	inc	PPCOMM			; PPU will clear this after key is pressed
 
+	; set vsync interrupt for FPS counting
 	mov	@#100, VSIOLD
 	mov	#VSYNCI, @#100
-
-	; set PPU flag to 'running' and call Manwe's drawing procedure
-	inc	PPCOMM			; PPU will clear this after key is pressed
-	clr	TICK50			; clear vsync ticks counter (do we really need that?)
+	clr	TICK50
 
 	; go go go...
-	call	INTRO
+	mov	DEMNUM, R0
+	dec	R0
+	asl	R0
+	call	@DEMTAB(R0)
 
 	; restore vsync interrupt
 	mov	VSIOLD, @#100
 
-	; clear PPU RAM and exit
+	; clear PPU RAM
 	call	PPRELE			; release PPU memory
 
 	; output FPS = FRAMES * 50 / TICKS
@@ -74,8 +95,8 @@ START:	.print	#MSG000			; helloworld!!111one
 	div	TICK50, R0	;
 	call	PRIN00
 	
-	.ttyout	#10.
-	.ttyout #13.
+	.ttyout	#12
+	.ttyout #15
 
 	.exit
 
@@ -259,8 +280,10 @@ GTVADR:	mov	#VBUF, R1
 INTKB1:	mov	R0, -(SP)
 	mov	@#177702, R0
 	; TODO: change drawing variables in CPU from pressed keys
+	bit	#^B10000000, R0
+	bne	10$
 	inc	KEYPR0
-	mov	(SP)+, R0
+10$:	mov	(SP)+, R0
 	rti
 KEYPR0:	.word	0
 
@@ -302,61 +325,56 @@ PPUEND:
 
 	
 ; //////////////////////////////////////////////////////////////////////////////
-; // Manwe/SandS code here
+; // Manwe/SandS intro code here
 ; //////////////////////////////////////////////////////////////////////////////
-INTRO:
 
-TablSi	= 64.
-Angle	= 16.				; Cos offset
-Variab	= Accums+6
+KOSICH:
 
-Speed:	br	Begin			; Y
+D1Ang	= 16.				; Cos offset
+D1Var	= D1Acc+6
+
+D1Spd:	br	D1Beg			; Y
 	.word	36543,1321		; timer2, timer1
-Accums:
+D1Acc:
 
-Begin:
+D1Beg:
 	; Clone sine table
-	mov	#Tabl+32., R1		; pointer to sine table
+	mov	#D1TBL+32., R1		; pointer to sine table
 	mov	#32., R2
-1$:	movb	Tabl-1(R2), (R1)+
-	sob	R2, 1$
+10$:	movb	D1TBL-1(R2), (R1)+
+	sob	R2, 10$
 
-	; clear screen (originally was from the end of code to 100000)
-	mov	VADDR, R1
-	mov	#256.*64., R3
-2$:	clr	(R1)+
-	sob	R3, 2$
-
-Loop:	mov	#Accums, R3
+Loop:	mov	#D1Acc, R3
 	clr	(R3)+			; clear accums
 	clr	(R3)+
 	tst	(R3)+
 	mov	#100, R0		; mask
-Direct:	incb	(R3)			; default Y
-	bne	1$
-	xor	R0, Direct		; DEC opcode: 5313, INC opcode: 5213
-1$:	mov	(R3)+, (R3)		; set Y
+D1Dir:	incb	(R3)			; default Y
+	bne	10$
+	xor	R0, D1Dir		; DEC opcode: 5313, INC opcode: 5213
+10$:	mov	(R3)+, (R3)		; set Y
 	mov	(R3)+, (R3)		; set timer2
+
 	mov	VADDR, R0 		; screen address
 	add	#420, R0
 
 	; render twister to screen
 Render:
-	mov	#Speed, R4
+	mov	#D1Spd, R4
 	mov	#3, R3
 10$:	add	(R4)+, 4(R4)		; add speed to accum
 	adc	14(R4)			; increment variable
 	sob	R3, 10$
 	
-	mov	#Variab+6, R3		; pointer to variable array
+	mov	#D1Var+6, R3		; pointer to variable array
 	mov	(R3), R4		; get timer 1
-	call	Sin
+	call	D1Sin
 	swab	R5
 	asl	R5
-	mov	R5, Speed		; Y speed
+	mov	R5, D1Spd		; Y speed
 
 	mov	-(R3), R4		; get timer 2
-	call	Sin
+	call	D1Sin
 	add	#64., R5		; shift from left side
 	asr	R5
 	asr	R5
@@ -370,30 +388,30 @@ Render:
 	add	#176, (SP)		; set minimum
 
 	mov	#8., R3
-3$:	call	Sin			; R5=Sin(R4)
+30$:	call	D1Sin			; R5=Sin(R4)
 	mov	R5, R1
 	asr	R1			; left coordinate
-	add	#Angle, R4		; 90 degrees offset
-	call	Sin			; R5=Sin(R4)
+	add	#D1Ang, R4		; 90 degrees offset
+	call	D1Sin			; R5=Sin(R4)
 	asr	R5			; right coordinate
 	sub	R1, R5			; length
-	ble	7$
+	ble	70$
 	bic	#177, R0		; new screen line
 	add	R2, R0			; horisontal shift
 	add	R1, R0
 	add	R1, R0
 	cmp	R0, (SP)		; minimum
-	bgt	4$
+	bgt	40$
 	mov	R0, (SP)		; set new minimum
-4$:	mov	Color-2(R3), R1		; read colour
-5$:	mov	R1, (R0)+
-	sob	R5, 5$
+40$:	mov	D1Clr-2(R3), R1		; read colour
+50$:	mov	R1, (R0)+
+	sob	R5, 50$
 	cmp	R0, 2(SP)		; maximum
-	blos	6$
+	blos	60$
 	mov	R0, 2(SP)		; set new maximum
-6$:	bis	#^B1111000011110000, -(R0)		; draw border
-7$:	dec	R3
-	sob	R3, 3$
+60$:	bis	#^B1111000011110000, -(R0)		; draw border
+70$:	dec	R3
+	sob	R3, 30$
 
 	mov	(SP)+, R5		; get minimum
 	clr	-(R5)			; erase left pixels
@@ -420,19 +438,130 @@ Render:
 ; Sinus
 ; input: R4 - angle
 ; outpu: R5 - sinus
-Sin:	mov	R4, R5
+D1Sin:	mov	R4, R5
 	bic	#177700, R5
-	movb	Tabl(R5), R5
+	movb	D1Tbl(R5), R5
 	return
 
 	; were bytes 231,167,252,273
-Color:	.word	^B1010101001010101, ^B0101010111111111
+D1Clr:	.word	^B1010101001010101, ^B0101010111111111
 	.word	^B1111111100000000, ^B1111111101010101
 
-Tabl:	.byte	63.,62.,62.,61.,60.,58.,56.,54.,52.,50.,48.,45.,42.,39.,37.,33.
+D1Tbl:	.byte	63.,62.,62.,61.,60.,58.,56.,54.,52.,50.,48.,45.,42.,39.,37.,33.
 	.byte	31.,28.,25.,22.,19.,17.,14.,12.,10.,8.,6.,4.,3.,2.,2.,1.
  
-	.blkw	32.	; buffer for sinetable cloning (not much need, but just in case)
+	.blkw	32.	; buffer for sinetable cloning
+
+
+; ///////////////////////////////////////////////////////////////////////////////////
+; // Ripples demo
+; ///////////////////////////////////////////////////////////////////////////////////
+
+D2COLR:	.word	^B0000000000010000, ^B0001000100000000, ^B0010010100000000, ^B0101010100000000
+	.word	^B0111010100000000, ^B0111011100000000, ^B1111011100000000, ^B1111111100000000
+	.word	^B0001000000010000, ^B0001000100010001, ^B0010010100100101, ^B0101010101010101
+	.word	^B0111010101110101, ^B0111011101110111, ^B1111011111110111, ^B1111111111111111
+
+D2BWid = 48.
+
+D2BUF1:	.blkw	D2BWid*D2BWid
+D2BUF2:	.blkw	D2BWid*D2BWid
+D2BUFE:
+
+Riples:
+	; clear buffers
+	mov	#D2BUF1, R0
+	mov	#D2BUFE-D2BUF1/2, R3
+	clr	(R0)+
+	sob	R3, .-2
+
+RiplRN:	; render frame
+
+D2BPRO:	; process buffers
+	mov	#D2BWid*2+2+D2BUF1, R4
+	mov	#D2BWid*2+2+D2BUF2, R5
+	bit	#1, FRAMES
+	beq	2$
+	xor	R4, R5			; swap registers
+	xor	R5, R4
+	xor	R4, R5
+2$:	; R4 - 'previous' buffer addr, R5 - 'current' buffer addr
+
+	; add random dot in 'previous'
+	bit	#11, FRAMES
+	beq	10$
+	call	Random
+	bic	#^B1111111111100000, R0	; R0 <- 0..31 random Y
+	add	#7., R0
+	mul	#D2BWid*2, R0		; R1 <- buf addr by random line
+	call	Random
+	bic	#^B1111111111000001, R0	; R0 <- 0..62 (even) random X
+	add	#16., R0		; center it
+	add	R0, R1
+	add	R4, R1
+	mov	#31., (R1)
+
+10$:	; process
+	mov	R5, -(SP)
+	mov	#D2BWid-2, R2
+20$:	mov	#D2BWid-2, R3
+30$:	mov	2(R4), R0
+	add	-2(R4), R0
+	add	D2BWid*2(R4), R0
+	add	-D2BWid*2(R4), R0
+	asr	R0
+	sub	(R5), R0
+	bpl	40$			; must be 
+	clr	R0			; in range of
+40$:	bic	#^B1111111111100000, R0	; 0..31
+	mov	R0, (R5)+
+	inc	R4
+	inc	R4
+	sob	R3, 30$
+	add	#4., R4
+	add	#4., R5
+	sob	R2, 20$
+
+D2REND:	; render 'current' buffer to screen
+	mov	(SP)+, R5		; rewind 'current' addr
+	mov	VADDR, R0
+	add	#128.*32.+32., R0
+	mov	#256., R4		; +2 screen lines
+	mov	#D2BWid-2, R2
+20$:	mov	#D2BWid-2, R3
+30$:	mov	(R5)+, R1
+	bic	#1, R1			; our colors are in words
+	mov	D2COLR(R1), R1
+	mov	R1, (R0)
+	add	R4, R0
+	mov	R1, (R0)
+	sub	#256.-2, R0
+	sob	R3, 30$
+	add	#4, R5			; skip buffer borders
+	add	#<128.*4>-<D2BWid-2*2>, R0
+	sob	R2, 20$
+
+	inc	FRAMES
+	tst	PPCOMM			; +++ test for PPU asking to abort
+	bne	RiplRN
+	return
+
+; random with linear-feedback shift register (Galois)
+; random -> R0
+Random:	clc
+	ror	(PC)+
+Lfsr00:	.word	126341 		; 0ACE1
+	bcc	Lfsr03
+	mov	(PC)+, R0
+Lfsr01:	.word	132000		; 0B400
+	xor	R0, Lfsr00
+Lfsr03:	mov	Lfsr00, R0
+	return
+
+
+; ///////////////////////////////////////////////////////////////////////////////////
+; // Video buffer in RAM
+; ///////////////////////////////////////////////////////////////////////////////////
 
 VBUF:	.blkb	100000+256.	; I know it lol
 	.word	123456
