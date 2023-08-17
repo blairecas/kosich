@@ -1,4 +1,4 @@
-	.mcall	.print .ttyin .ttyout .fetch .looku .readw .close .exit
+	.mcall	.print .ttyin .exit
 	.enabl	LC
 	.list	MEB	; enable macro-extensions binary listing
 
@@ -20,14 +20,13 @@ MSG000:	.ascii	<12>/Demo select:/<12><15>
 	.asciz	/0 - Exit/<12><15>
 MSG010:	.asciz	/ERR: PPU allocate memory failed/
 MSGCLS: .byte	033, 014, 110, 0
-MSGFPS:	.asciz	/FPS:/
 	.even
 
 ; //////////////////////////////////////////////////////////////////////////////
 ; // START
 ; //////////////////////////////////////////////////////////////////////////////
 
-START:	.print	#MSG000			; helloworld!!111one
+START:	.print	#Msg000			; helloworld!!111one
 	bis	#10000, @#44		; don't echo keys
 2$:	.ttyin				; input char -> R0
 	cmp	R0, #'0
@@ -39,8 +38,8 @@ START:	.print	#MSG000			; helloworld!!111one
 	.exit
 
 10$:	; prepare
-	mov	R0, DEMNUM		; demo number
-	.print	#MSGCLS			; clear screen with ESC-codes		
+	mov	R0, DemNum		; demo number
+	.print	#MsgCls			; we needed THIS!!! or else keys and print buffer will be stuck
 
 	; adjust vaddr start and end (align them with 128 bytes)
 	mov	#VBUF, VADDR
@@ -50,7 +49,7 @@ START:	.print	#MSG000			; helloworld!!111one
 	add	#100000, VADEN
 	; clear vbuf
 	mov	VADDR, R1
-	mov	#256.*64., R3
+	mov	#257.*64., R3		; yes it's 257! (instead of 256)
 	clr	(R1)+
 	sob	R3, .-2
 
@@ -75,28 +74,11 @@ START:	.print	#MSG000			; helloworld!!111one
 	asl	R0
 	call	@DEMTAB(R0)
 
-	; restore vsync interrupt
-	mov	VSIOLD, @#100
-
 	; clear PPU RAM
 	call	PPRELE			; release PPU memory
 
-	; output FPS = FRAMES * 50 / TICKS
-	.print	#MSGFPS
-	mov	FRAMES, R0
-	mul	#50., R0
-	div	TICK50, R0
-	; R0=FPS R1=FPS%TICK50
-	mov	R1, -(SP)
-	call	PRINTD		; print integer part
-	.ttyout	#'.		; .
-	mov	(SP)+, R0	; convert %TICK50 to hundreds
-	mul	#100., R0	; *100/TICK50 = hundreds
-	div	TICK50, R0	;
-	call	PRIN00
-	
-	.ttyout	#12
-	.ttyout #15
+	; restore vsync interrupt
+	mov	VSIOLD, @#100
 
 	.exit
 
@@ -104,40 +86,73 @@ START:	.print	#MSG000			; helloworld!!111one
 VSYNCI:	inc	TICK50
 	rti
 
-; various prints from R0
-; print decimal 5-digits with leading zeroes
-P00000:	mov	#5, R3
-PrintP:	mov	#Pri000+5, R5
-1$:	mov	R0, R1
-	clr	R0
-	div	#10., R0
-	add	#'0, R1
-	movb	R1, -(R5)
-	sob	R3, 1$
-PriOut:	movb	(R5)+, R0
-	beq	3$
-	.ttyout
-	br	PriOut
-3$:	return
-; print decimal without leading zeroes
-PrintD:	mov	#Pri000+5, R5
-1$:	mov	R0, R1
+MsgFp8:	.asciz	/00:00/
+	.even
+
+Font8:	.byte	0, 76, 147, 147, 147, 147, 177, 76
+	.byte	0, 30, 34, 34, 30, 30, 176, 176
+	.byte	0, 76, 163, 70, 34, 16, 177, 177
+	.byte	0, 176, 60, 30, 60, 147, 177, 76
+	.byte	0, 3, 3, 73, 177, 70, 70, 70
+	.byte	0, 177, 7, 77, 140, 147, 177, 76
+	.byte	0, 76, 7, 77, 147, 147, 177, 76
+	.byte	0, 177, 161, 70, 34, 16, 7, 7
+	.byte	0, 76, 147, 76, 147, 147, 177, 76
+	.byte	0, 76, 147, 147, 176, 70, 34, 16
+	.byte	0, 0, 0, 0, 0, 30, 30, 0
+	.even 
+
+; print string
+; R0 - text addr
+PriSt8:	mov	VADDR, R5
+	add	#128.+12., R5
+	mov	#64.*2., R2		; vaddr addition is 64 words
+10$:	movb	(R0)+, R1		; get text byte
+	beq	99$			; zero - exit
+	sub	#'0, R1			; relative to '0'
+	asl	R1			; *8 bytes (character font size)
+	asl	R1
+	asl	R1
+	add	#Font8, R1		; R1 = font data
+	.rept	8.			; out character
+	movb	(R1)+, (R5)
+	add	R2, R5
+	.endr
+	sub	#64.*2.*8.-2, R5	; advance vaddr
+	br	10$
+99$:	return 
+
+; put 2 digits string
+; R5 - where to put, R0 - number
+Digi2:
+	cmp	R0, #99.
+	blos	10$
+	mov	#99., R0
+10$:	movb	#'0, (R5)+
+	movb	#'0, (R5)+
+20$:	mov	R0, R1
 	clr	R0
 	div	#10., R0
 	add	#'0, R1
 	movb	R1, -(R5)
 	tst	R0
-	bne	1$
-	br	PriOut
-; print decimal 00-99 with leading zeroes
-Prin00:	cmp	R0, #99.
-	blos	1$
-	.print	#Error
-	.exit
-1$:	mov	#2, R3
-	br	PrintP
-Pri000:	.ASCIZ	/00000/
-Error:	.ASCIZ	/Print Error/
+	bne	20$
+	return
+
+; count fps
+CouFps:	mov	Frames, R0
+	mul	#50., R0
+	div	Tick50, R0
+	; R0=FPS R1=FPS%TICK50
+	mov	R1, -(SP)
+	mov	#MsgFp8, R5
+	call	Digi2
+	mov	(SP)+, R0	; convert %TICK50 to hundreds
+	mul	#100., R0	; *100/TICK50 = hundreds
+	div	Tick50, R0	;
+	mov	#MsgFp8+3, R5
+	call	Digi2
+	return
 
 ; //////////////////////////////////////////////////////////////////////////////
 ; // CPU -> PPU exchange	
@@ -310,12 +325,14 @@ PPPGM1:	mov	R0, -(SP)		; need to save R0 for PPU process
 99$:	mov	(SP)+, R0		; restore R0 (needed for dispatcher)
 	jmp	@#174170		; jump to process dispatcher
 10$:	; abort PPU process
+	mtps	#200
 	mov	BKW270, @#270		; restore lines table addr
 	mov	BKW272, @#272
 	mov	BKW300, @#300		; restore kbd interrupt
 	clr	@#7100			; do not execute process again
 	mov	#PPCOMM/2, @#177010	; control word addr
 	clr	@#177014		; clear it
+	mtps	#0
 	br	99$
 
 ; //////////////////////////////////////////////////////////////////////////////
@@ -385,7 +402,7 @@ Render:
 
 	mov	R0, -(SP)		; set maximum
 	mov	R0, -(SP)
-	add	#176, (SP)		; set minimum
+	add	#128., (SP)		; set minimum
 
 	mov	#8., R3
 30$:	call	D1Sin			; R5=Sin(R4)
@@ -401,7 +418,7 @@ Render:
 	add	R1, R0
 	add	R1, R0
 	cmp	R0, (SP)		; minimum
-	bgt	40$
+	bhis	40$
 	mov	R0, (SP)		; set new minimum
 40$:	mov	D1Clr-2(R3), R1		; read colour
 50$:	mov	R1, (R0)+
@@ -418,19 +435,28 @@ Render:
 	clr	-(R5)
 	clr	-(R5)
 	clr	-(R5)
+	clr	-(R5)
 	mov	(SP)+, R5		; get maxumum
 	clr	(R5)+			; erase right pixels
 	clr	(R5)+
 	clr	(R5)+			; added one more clear
-	clr	(R5)
+	clr	(R5)+
 
 	add	#256., R0		; +2 screen lines
 	cmp	R0, VADEN
 	blo	Render			; end of screen?
 
-	inc	FRAMES			; for FPS counting
+	inc	Frames			; for FPS counting
+	cmp	Frames, #50.
+	blt	80$
+	; print fps
+	call	CouFps
+	clr	Frames
+	clr	Tick50
+	mov	#MsgFp8, R0
+	call	PriSt8
 
-	tst	PPCOMM			; +++ test for PPU asking to abort
+80$:	tst	PPCOMM			; +++ test for PPU asking to abort
 	bne	Loop			; next frame if not
 
 	return
@@ -449,7 +475,8 @@ D1Clr:	.word	^B1010101001010101, ^B0101010111111111
 
 D1Tbl:	.byte	63.,62.,62.,61.,60.,58.,56.,54.,52.,50.,48.,45.,42.,39.,37.,33.
 	.byte	31.,28.,25.,22.,19.,17.,14.,12.,10.,8.,6.,4.,3.,2.,2.,1.
- 
+	.even
+
 	.blkw	32.	; buffer for sinetable cloning
 
 
@@ -537,8 +564,17 @@ D2REND:	; render 'current' buffer to screen
 	add	#<128.*4>-<D2BWid-2*2>, R0	; next screen chunk line
 	sob	R2, 20$
 
-	inc	FRAMES
-	tst	PPCOMM			; +++ test for PPU asking to abort
+	inc	Frames			; for FPS counting
+	cmp	Frames, #50.
+	blt	80$
+	; print fps
+	call	CouFps
+	clr	Frames
+	clr	Tick50
+	mov	#MsgFp8, R0
+	call	PriSt8
+
+80$:	tst	PPCOMM			; +++ test for PPU asking to abort
 	bne	RiplRN
 	return
 
@@ -563,6 +599,6 @@ D2BUF1:	.blkw	D2BWid*D2BWid
 D2BUF2:	.blkw	D2BWid*D2BWid
 D2BUFE:
 
-VBUF:	.blkb	100000+256.	; I know it lol
+VBUF:	.blkb	100000+512.	; I know it lol
 
 	.END	START
