@@ -1,56 +1,22 @@
-	.mcall	.print .ttyin .exit
+	.mcall	.exit
 	.enabl	LC
 	.list	MEB	; enable macro-extensions binary listing
+	.asect
+	.=1000
 
-VADDR:	.word	0	; video addr
-VADEN:	.word	0	; video addr + 100000
-DEMNUM:	.word	0	; demo number
-
-PPCOMM:	.word	0	; PPU command
-TICK50:	.word	0	; 50Hz ticks counter
-FRAMES:	.word	0	; frames counter
-VSIOLD:	.word	0	; old vsync interrupt addr
-
-; demos addresses
-DEMTAB:	.word	KOSICH, RIPLES
-
-MSG000:	.ascii	<12>/Demo select:/<12><15>
-	.ascii	/1 - Adaptation of Kosi4ka BK-0010 256-byte intro by Manwe/<57>/SandS/<12><15>
-	.ascii	/2 - Ripples/<12><15>
-	.asciz	/0 - Exit/<12><15>
-MSG010:	.asciz	/ERR: PPU allocate memory failed/
-MSGCLS: .byte	033, 014, 110, 0
-	.even
+Vaddr = 20000
+Vaden = 120200
 
 ; //////////////////////////////////////////////////////////////////////////////
 ; // START
 ; //////////////////////////////////////////////////////////////////////////////
 
-START:	.print	#Msg000			; helloworld!!111one
-	bis	#10000, @#44		; don't echo keys
-2$:	.ttyin				; input char -> R0
-	cmp	R0, #'0
-	blo	2$
-	cmp	R0, #'2
-	bhi	2$
-	sub	#'0, R0
-	bne	10$
-	.exit
-
-10$:	; prepare
-	mov	R0, DemNum		; demo number
-	.print	#MsgCls			; we needed THIS!!! or else keys and print buffer will be stuck
-
-	; adjust vaddr start and end (align them with 128 bytes)
-	mov	#VBUF, VADDR
-	add	#128., VADDR
-	bic	#^B01111111, VADDR
-	mov	VADDR, VADEN
-	add	#100000, VADEN
-	; clear vbuf
-	mov	VADDR, R1
-	mov	#257.*64., R3		; yes it's 257! (instead of 256)
-	clr	(R1)+
+Start:	; clear screen
+	mov	#MsgCls, R0			; we needed THIS!!! or else keys and print buffer will be stuck
+	call	PriStr	
+	mov	#Vaddr, R0
+	mov	#40100, R3
+	clr	(R0)+
 	sob	R3, .-2
 
 	; run PPU code
@@ -64,27 +30,50 @@ START:	.print	#Msg000			; helloworld!!111one
 	inc	PPCOMM			; PPU will clear this after key is pressed
 
 	; set vsync interrupt for FPS counting
-	mov	@#100, VSIOLD
-	mov	#VSYNCI, @#100
-	clr	TICK50
+	mov	@#100, VsiOld
+	mov	#VsyncI, @#100
+	clr	Tick50
 
-	; go go go...
-	mov	DEMNUM, R0
-	dec	R0
-	asl	R0
-	call	@DEMTAB(R0)
+	call	Kosich
 
 	; clear PPU RAM
-	call	PPRELE			; release PPU memory
+	call	PPRele			; release PPU memory
 
 	; restore vsync interrupt
-	mov	VSIOLD, @#100
+	mov	VsiOld, @#100
+
+	mov	#Msg000, R0
+	call	PriStr
 
 	.exit
 
+
 ; 50Hz interrupt
-VSYNCI:	inc	TICK50
+VsyncI:	inc	Tick50
 	rti
+
+
+; print string with channel 0
+; r0 = addr
+PriStr:
+	movb	(R0)+, R1
+	beq	99$
+	tstb	@#177564
+	bpl	.-4
+	movb	r1, @#177566
+	br	pristr
+99$:	return 
+
+
+PPcomm:	.word	0	; PPU command
+Tick50:	.word	0	; 50Hz ticks counter
+Frames:	.word	0	; frames counter
+VsiOld:	.word	0	; old vsync interrupt addr
+
+Msg000:	.asciz	/Adaptation of Kosi4ka BK-0010 256-byte intro by Manwe/<57>/SandS/<12><15>
+Msg010:	.asciz	/ERR: PPU allocate memory failed/
+MsgCls: .byte	033, 014, 110, 0
+	.even
 
 MsgFp8:	.asciz	/00:00/
 	.even
@@ -104,8 +93,7 @@ Font8:	.byte	0, 76, 147, 147, 147, 147, 177, 76
 
 ; print string
 ; R0 - text addr
-PriSt8:	mov	VADDR, R5
-	add	#128.+10., R5
+PriSt8:	mov	#128.+10.+Vaddr, R5
 	mov	#64.*2., R2		; vaddr addition is 64 words
 10$:	movb	(R0)+, R1		; get text byte
 	beq	99$			; zero - exit
@@ -194,7 +182,8 @@ PPRUN:	movb	#1, PPCMD	; 1 - allocate memory
 	call	PPSEN
 	tstb	PPARR		; test if allocate success
 	beq	1$		; 0 - OK
-	.print	#MSG010
+	mov	#Msg010, R0
+	call	PriStr
 	.exit			; fatal error - out of memory in PPU
 1$:	movb	#20, PPCMD	; 20 - write to PPU mem
 	mov	R5, PPLEN
@@ -247,13 +236,13 @@ PPUSTA:	mov	PC, R0
 	sob	R3, 10$
 	; 16 'empty' lines (BK-0010 is 256 lines screen, so 288-256/2 = 16
 	mov	#16., R3
-	call	GTVADR			; R1 <- VADDR
+	mov	#Vaddr/2, R1
 20$:	mov	R1, (R0)+
 	mov	R0, (R0)
 	add	#2, (R0)+
 	sob	R3, 20$
 	; next 256 'main' lines
-	call	GTVADR
+	mov	#Vaddr/2, R1
 	mov	#256., R3
 30$:	mov	R1, (R0)+
 	mov	R0, (R0)
@@ -261,7 +250,7 @@ PPUSTA:	mov	PC, R0
 	add	#64., R1		; double BK-0010 scr width
 	sob	R3, 30$
 	; last 16 empty lines
-	call	GTVADR
+	mov	#Vaddr/2, R1
 	mov	#16., R3
 40$:	mov	R1, (R0)+
 	mov	R0, (R0)
@@ -282,13 +271,6 @@ PPUSTA:	mov	PC, R0
 	; clear current command (phase 1 ready)
 	mov	#PPCOMM/2, @#177010
 	clr	@#177014
-	return
-
-; get current VADDR/2 in R1
-GTVADR:	mov	#VBUF, R1
-	add	#128., R1
-	bic	#^B01111111, R1
-	asr	R1
 	return
 
 ; 'keyboard' interrupt
@@ -372,8 +354,7 @@ D1Dir:	incb	(R3)			; default Y
 10$:	mov	(R3)+, (R3)		; set Y
 	mov	(R3)+, (R3)		; set timer2
 
-	mov	VADDR, R0 		; screen address
-	add	#420, R0
+	mov	#VAddr+400, R0 		; screen address
 
 	; render twister to screen
 Render:
@@ -435,15 +416,14 @@ Render:
 	clr	-(R5)
 	clr	-(R5)
 	clr	-(R5)
-	clr	-(R5)
 	mov	(SP)+, R5		; get maxumum
 	clr	(R5)+			; erase right pixels
 	clr	(R5)+
 	clr	(R5)+			; added one more clear
 	clr	(R5)+
 
-	add	#256., R0		; +2 screen lines
-	cmp	R0, VADEN
+	add	#128.*3, R0		; +3 screen lines
+	cmp	R0, #Vaden
 	blo	Render			; end of screen?
 
 	inc	Frames			; for FPS counting
@@ -479,126 +459,7 @@ D1Tbl:	.byte	63.,62.,62.,61.,60.,58.,56.,54.,52.,50.,48.,45.,42.,39.,37.,33.
 
 	.blkw	32.	; buffer for sinetable cloning
 
+.=Vaden
+	.word	1,2,3,4
 
-; ///////////////////////////////////////////////////////////////////////////////////
-; // Ripples demo
-; ///////////////////////////////////////////////////////////////////////////////////
-
-D2COLR:	.word	^B0000000001000100, ^B0001000101000100, ^B0101010100000000, ^B0111011100000000
-	.word	^B1111111110001000, ^B1111111110101010, ^B1111111111101110, ^B1111111111111111
-	.word	^B1010101010101010, ^B1010101010101010, ^B1010101010101010, ^B1010101010101010
-	.word	^B1010101010101010, ^B1010101010101010, ^B1010101010101010, ^B1010101010101010
-
-D2BWid = 48.
-
-Riples:
-	; clear buffers
-	mov	#D2BUF1, R0
-	mov	#D2BUFE-D2BUF1/2, R3
-	clr	(R0)+
-	sob	R3, .-2
-
-RiplRN:	; render frame
-
-D2BPRO:	; process buffers
-	mov	#D2BWid*2+2+D2BUF1, R4	; 'previous' buffer addr
-	mov	#D2BWid*2+2+D2BUF2, R5	; 'current' buffer addr
-	bit	#1, FRAMES		; every frame they must be swapped
-	beq	2$
-	xor	R4, R5			; swap registers
-	xor	R5, R4
-	xor	R4, R5
-2$:	; R4 - 'previous' buffer addr, R5 - 'current' buffer addr
-
-	; add random dot in 'previous'
-;	bit	#1, FRAMES		; i think it's ok for every frame
-;	beq	10$
-	call	Random			; R0 <- random word
-	bic	#^B1111111111100000, R0	; R0 <- 0..31 random Y
-	add	#7., R0			; add some shift (need to use D2BWid though)
-	mul	#D2BWid*2, R0		; R1 <- buf addr by random line
-	call	Random
-	bic	#^B1111111111000001, R0	; R0 <- 0..62 (even) random X
-	add	#16., R0		; center it by X (yes, need to use D2BWin also)
-	add	R0, R1
-	add	R4, R1
-	mov	#31., (R1)
-
-10$:	; process waves in two buffers
-	mov	R5, -(SP)		; store addr of 'current' drawing buffer
-	mov	#D2BWid-2, R2		; we have buffers by 1 element larger than screen render
-20$:	mov	#D2BWid-2, R3		; so - process only 'inner' side
-30$:	mov	2(R4), R0
-	add	-2(R4), R0
-	add	D2BWid*2(R4), R0
-	add	-D2BWid*2(R4), R0
-	asr	R0
-	sub	(R5), R0
-	bpl	40$			; must be 
-	clr	R0			; in range of
-40$:	bic	#^B1111111111100000, R0	; 0..31
-	mov	R0, (R5)+
-	inc	R4
-	inc	R4
-	sob	R3, 30$
-	add	#4., R4			; skip buffer borders (2 words in beg and end)
-	add	#4., R5
-	sob	R2, 20$
-
-D2REND:	; render 'current' buffer to screen
-	mov	(SP)+, R5		; restore 'current' addr
-	mov	VADDR, R0
-	add	#128.*32.+32., R0	; skip some lines at screen (must use D2BWin also)
-	mov	#256., R4		; +2 screen lines addition register
-	mov	#D2BWid-2, R2
-20$:	mov	#D2BWid-2, R3
-30$:	mov	(R5)+, R1
-	bic	#1, R1			; our colors are in words
-	mov	D2COLR(R1), R1
-	mov	R1, (R0)
-	add	R4, R0
-	mov	R1, (R0)
-	sub	#256.-2, R0
-	sob	R3, 30$
-	add	#4, R5			; skip buffer borders
-	add	#<128.*4>-<D2BWid-2*2>, R0	; next screen chunk line
-	sob	R2, 20$
-
-	inc	Frames			; for FPS counting
-	cmp	Frames, #50.
-	blt	80$
-	; print fps
-	call	CouFps
-	clr	Frames
-	clr	Tick50
-	mov	#MsgFp8, R0
-	call	PriSt8
-
-80$:	tst	PPCOMM			; +++ test for PPU asking to abort
-	bne	RiplRN
-	return
-
-; random with linear-feedback shift register (Galois)
-; random -> R0
-Random:	clc
-	ror	(PC)+
-Lfsr00:	.word	126341 		; 0ACE1
-	bcc	Lfsr03
-	mov	(PC)+, R0
-Lfsr01:	.word	132000		; 0B400
-	xor	R0, Lfsr00
-Lfsr03:	mov	Lfsr00, R0
-	return
-
-
-; ///////////////////////////////////////////////////////////////////////////////////
-; // Buffers, video RAM and whatever
-; ///////////////////////////////////////////////////////////////////////////////////
-
-D2BUF1:	.blkw	D2BWid*D2BWid
-D2BUF2:	.blkw	D2BWid*D2BWid
-D2BUFE:
-
-VBUF:	.blkb	100000+512.	; I know it lol
-
-	.END	START
+	.end	Start
