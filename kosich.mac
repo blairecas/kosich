@@ -34,7 +34,7 @@ Start:	; clear screen
 	mov	#VsyncI, @#100
 	clr	Tick50
 
-	call	Kosich
+	call	KosCpu
 
 	; clear PPU RAM
 	call	PPRele			; release PPU memory
@@ -262,15 +262,30 @@ PPUSTA:	mov	PC, R0
 	clr	@#270
 	bis	#6, R2			; first line is palette 
 	mov	R2, @#272		; saved addr
+
 	; queue process
-	mov	PC, R0			; get proc addr
-	add	#PPPGM1-., R0		;
-	mov	R0, ADPGM1		; save for later use
-	mov	R0, @#7124		; 7104.. (24(8) bytes) - processes addrs
-	mov	#1, @#7100		; 7060.. (24(8) bytes) - processes status, 1-run
+	;mov	PC, R0			; get proc addr
+	;add	#PPPGM1-., R0		;
+	;mov	R0, ADPGM1		; save for later use
+	;mov	R0, @#7124		; 7104.. (24(8) bytes) - processes addrs
+	;mov	#1, @#7100		; 7060.. (24(8) bytes) - processes status, 1-run
+
 	; clear current command (phase 1 ready)
 	mov	#PPCOMM/2, @#177010
 	clr	@#177014
+
+	tst	KeyPr0
+	beq	.-4
+
+	; exit
+	mtps	#200
+	mov	BKW270, @#270		; restore lines table addr
+	mov	BKW272, @#272
+	mov	BKW300, @#300		; restore kbd interrupt
+	mov	#PPComm/2, @#177010	; control word addr
+	clr	@#177014		; clear it
+	mtps	#0
+
 	return
 
 ; 'keyboard' interrupt
@@ -296,26 +311,26 @@ PPLIN1:	.BLKW	1200			; need 1150 (616.) words, but for .even 10 and whatever
 ; // PPU Process
 ; //////////////////////////////////////////////////////////////////////////////
 
-ADPGM1:	.WORD	0			; address of process
-
-PPPGM1:	mov	R0, -(SP)		; need to save R0 for PPU process
-	tst	KEYPR0			; test for keypress to abort
-	bne	10$			;
-	; return to dispatcher
-	mov	ADPGM1, @#7124		; re-queue process
-	mov	#1, @#7100		; set for execution
-99$:	mov	(SP)+, R0		; restore R0 (needed for dispatcher)
-	jmp	@#174170		; jump to process dispatcher
-10$:	; abort PPU process
-	mtps	#200
-	mov	BKW270, @#270		; restore lines table addr
-	mov	BKW272, @#272
-	mov	BKW300, @#300		; restore kbd interrupt
-	clr	@#7100			; do not execute process again
-	mov	#PPCOMM/2, @#177010	; control word addr
-	clr	@#177014		; clear it
-	mtps	#0
-	br	99$
+;ADPGM1:	.WORD	0			; address of process
+;
+;PPPGM1:	mov	R0, -(SP)		; need to save R0 for PPU process
+;	tst	KEYPR0			; test for keypress to abort
+;	bne	10$			;
+;	; return to dispatcher
+;	mov	ADPGM1, @#7124		; re-queue process
+;	mov	#1, @#7100		; set for execution
+;99$:	mov	(SP)+, R0		; restore R0 (needed for dispatcher)
+;	jmp	@#174170		; jump to process dispatcher
+;10$:	; abort PPU process
+;	mtps	#200
+;	mov	BKW270, @#270		; restore lines table addr
+;	mov	BKW272, @#272
+;	mov	BKW300, @#300		; restore kbd interrupt
+;	clr	@#7100			; do not execute process again
+;	mov	#PPCOMM/2, @#177010	; control word addr
+;	clr	@#177014		; clear it
+;	mtps	#0
+;	br	99$
 
 ; //////////////////////////////////////////////////////////////////////////////
 ; // END PPU CODE 
@@ -327,15 +342,13 @@ PPUEND:
 ; // Manwe/SandS intro code here
 ; //////////////////////////////////////////////////////////////////////////////
 
-KOSICH:
+KosCpu:
 
 D1Ang	= 16.				; Cos offset
 D1Var	= D1Acc+6
-
 D1Spd:	br	D1Beg			; Y
 	.word	36543,1321		; timer2, timer1
 D1Acc:
-
 D1Beg:
 	; Clone sine table
 	mov	#D1TBL+32., R1		; pointer to sine table
@@ -343,7 +356,7 @@ D1Beg:
 10$:	movb	D1TBL-1(R2), (R1)+
 	sob	R2, 10$
 
-Loop:	mov	#D1Acc, R3
+D1Loop:	mov	#D1Acc, R3
 	clr	(R3)+			; clear accums
 	clr	(R3)+
 	tst	(R3)+
@@ -353,12 +366,10 @@ D1Dir:	incb	(R3)			; default Y
 	xor	R0, D1Dir		; DEC opcode: 5313, INC opcode: 5213
 10$:	mov	(R3)+, (R3)		; set Y
 	mov	(R3)+, (R3)		; set timer2
-
 	mov	#VAddr+400, R0 		; screen address
 
 	; render twister to screen
-Render:
-	mov	#D1Spd, R4
+D1Rend:	mov	#D1Spd, R4
 	mov	#3, R3
 10$:	add	(R4)+, 4(R4)		; add speed to accum
 	adc	14(R4)			; increment variable
@@ -422,9 +433,9 @@ Render:
 	clr	(R5)+			; added one more clear
 	clr	(R5)+
 
-	add	#128.*3, R0		; +3 screen lines
+	add	#128.*3., R0		; +3 screen lines
 	cmp	R0, #Vaden
-	blo	Render			; end of screen?
+	blo	D1Rend			; end of screen?
 
 	inc	Frames			; for FPS counting
 	cmp	Frames, #50.
@@ -437,7 +448,7 @@ Render:
 	call	PriSt8
 
 80$:	tst	PPCOMM			; +++ test for PPU asking to abort
-	bne	Loop			; next frame if not
+	bne	D1Loop			; next frame if not
 
 	return
 
