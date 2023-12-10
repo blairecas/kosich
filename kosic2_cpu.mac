@@ -1,0 +1,169 @@
+	.title	CPU
+	.enabl	LC, AMA
+	.list	MEB
+	.asect
+	.=1000
+
+@include kosic2_common.mac
+
+; //////////////////////////////////////////////////////////////////////////////
+; // START
+; //////////////////////////////////////////////////////////////////////////////
+
+Start:	mtps	#200
+	mov	#1000, SP
+
+	; launch code in PPU
+	call	StartPPU
+
+	; clear upper CPU RAM
+	mov	#PPUStart, R0
+	mov	#160000-PPUStart/2, R3
+	clr	(R0)+
+	sob	R3, .-2
+
+	; relocate V20000 data to VaddrCpu
+	mov	#256.*40.*2+V20000Cpu, R0
+	mov	#256.*40.*2+VaddrCpu, R1
+	mov	#256.*40., R3
+	mov	-(R0), -(R1)
+	sob	R3, .-2
+
+	; clear ram to Vaddr
+	mov	#V20000Cpu, R0
+	mov	#VaddrCpu-V20000Cpu/2, R3
+	clr	(R0)+
+	sob	R3, .-2
+
+	; DI HALT ^_^
+	br	.
+
+; print string with channel 0
+; r0 = addr
+PriStr:
+	movb	(R0)+, R1
+	beq	99$
+	tstb	@#177564
+	bpl	.-4
+	movb	r1, @#177566
+	br	pristr
+99$:	return 
+
+; registers for accessing vram (or ram12)
+SetVreg:
+	mov	#176640, R4
+	mov	#176642, R5
+	return	
+
+
+; //////////////////////////////////////////////////////////////////////////////
+; // CPU <-> PPU 
+; //////////////////////////////////////////////////////////////////////////////
+
+; PPU message
+PPMSG:	.word	PPARR			; address of beginning of array
+        .word	177777			; end of transmission
+
+; PPU data exchange array
+PPARR:	.byte	0			; return value (0 - OK)
+PPCMD:	.byte	0			; command
+	.word	32			; device type (32 - PPU mem)
+PPAPP:	.word	0			; address for PPU
+PPACP:	.word	0			; address for CPU
+PPLEN:	.word	0			; length in words
+
+; send command to PPU with exch array
+PPSEN:	mov	#PPMSG, R0		; array address
+	mov	#5, R1			; bytes to send+1 (sending from @#PP_MSG)
+	br	1$
+2$:	movb	(R0)+, @#176676
+1$:	tstb	@#176674		; test if we are ready to send
+	bpl	1$			; cycle if >= 0 (not set last bit in byte)
+	sob	R1, 2$
+	return
+
+; send and start PPU code
+; R4 - start addr in CPU
+; R5 - length / 2
+PPRUN:	movb	#1, PPCMD		; 1 - allocate memory
+	mov	R5, PPLEN
+	call	PPSEN			
+	; (!) warn - no testing for success (!)
+	movb	#20, PPCMD		; 20 - write to PPU mem
+	mov	R5, PPLEN
+	mov 	R4, PPACP
+	call	PPSEN
+	movb	#30, PPCMD		; 30 - run
+	call	PPSEN
+	return 
+
+; //////////////////////////////////////////////////////////////////////////////
+; // PPU Loader
+; //////////////////////////////////////////////////////////////////////////////
+
+; (!) this code will run in PPU
+PPULoaderStart:
+	mtps	#200
+	clr	R0
+	call	@7132(R0)		; stop FD
+	; relocate code to the top of RAM
+	mov	PC, R0
+	add	#10$-., R0
+	mov	#77400, R1
+	mov	#200, R3
+	mov	(R0)+, (R1)+
+	sob	R3, .-2
+	jmp	@#77400
+10$:	; copy CPU VRAM -> PPU RAM
+	mov	#177010, R4
+	mov	#177014, R5
+	mov	#100000, (R4)		; from vaddr = 100000
+	clr	R0			; to addr = 0
+	mov	#37600, R3		; 
+	mov	(R5), (R0)+
+	inc	(R4)
+	sob	R3, .-4
+	mov	#1000, SP		; stack on 1000
+	jmp	(SP)			; jump there
+PPULoaderEnd:
+
+; send PPU code to VRAM and start PPU Loader
+StartPPU:
+	; put PPU code to VRAM
+	call	SetVreg
+	; clear vram first
+	mov	#100000, (R4)
+	mov	#40000, R3
+	clr	(R5)
+	inc	(R4)
+	sob	R3, .-4
+	; copy end of file to vram
+	mov	#PPUStart, R0
+	mov	#PPUEnd-PPUStart/2, R3
+	mov	#100000, (R4)
+	mov	(R0)+, (R5)
+	inc	(R4)
+	sob	R3, .-4
+	; start PPU launcher code
+	mov	#PPULoaderStart, R4
+	mov	#<PPULoaderEnd-PPULoaderStart/2>, R5
+	call	PPRUN
+	; clear PPU command just in case
+	clr	PpuCommand
+	return
+
+; //////////////////////////////////////////////////////////////
+; // Data 
+; //////////////////////////////////////////////////////////////
+
+@include vramcpu.mac
+
+; ////////////////////////////////////////////////////
+; // PPU data block
+; ////////////////////////////////////////////////////
+PPUStart:
+@include kosic2_cpu_ppu.mac
+	.even
+PPUEnd:
+
+	.end	Start

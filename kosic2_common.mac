@@ -1,0 +1,3 @@
+VaddrPpu = 20000
+VaddrCpu = VaddrPpu*2
+PpuCommand = 157776
