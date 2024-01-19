@@ -1,3 +1,5 @@
 .vscode
 .gitignore
-_*.*
+_*.lst
+_*.mac
+

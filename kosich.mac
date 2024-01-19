@@ -221,9 +221,10 @@ PPUSTA:	mov	PC, R0
 	clr	(R0)+			; vaddr is not used here
 	mov	R0, (R0)		; next element addr
 	add	#2, (R0)
-	bis	#2, (R0)+		; #2 = 010 - next element is scale&cursor
+	bis	#3, (R0)+		; #2 = 010 - next element is scale&cursor
 	; 2nd line - set scale, lumi and cursor
-	mov	#^B0000000000010000, (R0)+ ; no cursor
+	mov	R0, CurWad		; save cursor word addr
+	mov	#^B0000000000000000, (R0)+ ; no cursor initially
 	mov	#^B0000000000000111, (R0)+ ; 640x288, max luminance (..00111-640, ..10111 - 320)
 	clr	(R0)+			; vaddr is not used here
 	mov	R0, (R0)
@@ -246,6 +247,7 @@ PPUSTA:	mov	PC, R0
 	mov	#256., R3
 30$:	mov	R1, (R0)+
 	mov	R0, (R0)
+	bis	#1, (R0)
 	add	#2, (R0)+
 	add	#64., R1		; double BK-0010 scr width
 	sob	R3, 30$
@@ -274,8 +276,11 @@ PPUSTA:	mov	PC, R0
 	mov	#PPCOMM/2, @#177010
 	clr	@#177014
 
+50$:	mov	#CurPos/2, @#177010
+	mov	@#177014, @CurWad
+
 	tst	KeyPr0
-	beq	.-4
+	beq	50$
 
 	; exit
 	mtps	#200
@@ -303,6 +308,8 @@ KEYPR0:	.word	0
 BKW270:	.WORD	0
 BKW272:	.WORD	0
 BKW300:	.WORD	0
+
+CurWad:	.word	0			; cursor addr in line table
 
 ; lines table data
 PPLIN1:	.BLKW	1200			; need 1150 (616.) words, but for .even 10 and whatever
@@ -447,10 +454,26 @@ D1Rend:	mov	#D1Spd, R4
 	mov	#MsgFp8, R0
 	call	PriSt8
 
-80$:	tst	PPCOMM			; +++ test for PPU asking to abort
-	bne	D1Loop			; next frame if not
+80$:	; move cursor by sinetable
+	mov	CurCnt, R0		; cursor iteration
+	bic	#^B1111111111000000, R0	; 64 bytes max
+	movb	D1Tbl(R0), R0		; get sinetable value
+	add	#8., R0			; adjust it to be in center of screen
+	swab	R0			; to h-byte
+	clrb	R0
+	bis	#^B1111, R0		; set 'have cursor, color white'
+	mov	R0, CurPos		; update cursor position var
+	inc	CurCnt
 
-	return
+	tst	PPCOMM			; +++ test for PPU asking to abort
+	beq	99$
+	jmp	D1Loop			; next frame if not
+
+99$:	return
+
+
+CurCnt:	.word	0			; cursor iteration
+CurPos:	.word	0			; cursor position
 
 ; Sinus
 ; input: R4 - angle
