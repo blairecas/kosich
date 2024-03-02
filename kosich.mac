@@ -247,7 +247,7 @@ PPUSTA:	mov	PC, R0
 	mov	#256., R3
 30$:	mov	R1, (R0)+
 	mov	R0, (R0)
-	bis	#1, (R0)
+	bis	#1, (R0)		; turn cursor on|off every line
 	add	#2, (R0)+
 	add	#64., R1		; double BK-0010 scr width
 	sob	R3, 30$
