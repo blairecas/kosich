@@ -14,7 +14,7 @@ PPUMain:
 
 	; clear screen
 	mov	#VAddr-64., @#177010
-	mov	#289.*64., R3
+	mov	#258.*64., R3
 10$:	clr	@#177014
 	clrb	@#177012
 	inc	@#177010
@@ -48,8 +48,8 @@ Font8:	.byte	0, 76, 147, 147, 147, 147, 177, 76
 
 ; print string
 ; R0 - text addr
-PriSt8:	mov	#Vaddr+4, R5
-	mov	#128., R2		; vaddr addition
+PriSt8:	mov	#12.*64.+Vaddr+2, R5
+	mov	#64., R2		; vaddr addition
 10$:	movb	(R0)+, R1		; get text byte
 	beq	99$			; zero - exit
 	sub	#'0, R1			; relative to '0'
@@ -61,7 +61,7 @@ PriSt8:	mov	#Vaddr+4, R5
 	movb	(R1)+, (R5)
 	add	R2, R5
 	.endr
-	sub	#64.*2.*8.-2, R5	; advance vaddr
+	sub	#64.*8.-1, R5		; advance vaddr
 	br	10$
 99$:	return 
 
@@ -106,7 +106,7 @@ Frames:		.word	0
 Tick50:		.word	0			; 50Hz ticks counter
 
 VAddr		= 20000
-VAden		= 256.*64. + VAddr 
+VAden		= 255.*64. + VAddr 
 TablSize	= 64.
 Angle		= 16.				; Cos offset
 Variable	= Accums+6 
@@ -131,7 +131,7 @@ Direct:	INCB	(R3)				; default Y
 	XOR	R0, Direct			; DEC opcode: 5313, INC opcode: 5213
 10$:	MOV	(R3)+, (R3)			; set Y
 	MOV	(R3)+, (R3)			; set timer2
-	MOV	#VAddr+412, R0			; screen address
+	MOV	#128.*64.+10+VAddr, R0		; screen address
 
 ; render twister to screen
 Render:
@@ -170,7 +170,7 @@ Render:
 	SUB	R1, R5				; length
 	BLE	70$
 	BIC	#77, R0				; new screen line
-	add	#12, R0
+	add	#10, R0
 	ADD	R2, R0				; horisontal shift
 	ADD	R1, R0
 	CMP	R0, (SP)			; minimum
@@ -194,7 +194,7 @@ Render:
 	MOVB	R3, (R5)+
 	MOV	R3, (R5)
 
-	ADD	#64.*3, R0			; next screen line
+	ADD	#64.*2, R0			; next screen line
 	cmp	R0, #VAden	
 	blo	Render				; end of screen?
 

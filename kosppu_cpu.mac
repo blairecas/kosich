@@ -14,8 +14,213 @@ Start:	mtps	#200
 	; launch code in PPU
 	call	StartPPU
 
-	; DI:HALT ^_^
-	br	.
+	mov	#VsyInt, @#100
+	mov	#200, @#102
+
+	; run 'the same' in CPU
+	mtps	#0
+	jmp	Speed
+
+
+; vsync interrupt
+VsyInt:	inc	Tick50
+	rti
+
+MsgFp8:	.asciz	/00:00/
+	.even
+
+Font8:	.byte	0, 76, 147, 147, 147, 147, 177, 76
+	.byte	0, 30, 34, 34, 30, 30, 176, 176
+	.byte	0, 76, 163, 70, 34, 16, 177, 177
+	.byte	0, 176, 60, 30, 60, 147, 177, 76
+	.byte	0, 3, 3, 73, 177, 70, 70, 70
+	.byte	0, 177, 7, 77, 140, 147, 177, 76
+	.byte	0, 76, 7, 77, 147, 147, 177, 76
+	.byte	0, 177, 161, 70, 34, 16, 7, 7
+	.byte	0, 76, 147, 76, 147, 147, 177, 76
+	.byte	0, 76, 147, 147, 176, 70, 34, 16
+	.byte	0, 0, 0, 0, 0, 30, 30, 0
+	.even 
+
+; print string
+; R0 - text addr
+PriSt8:	mov	#Vaddr+4, R5
+	mov	#128., R2		; vaddr addition
+10$:	movb	(R0)+, R1		; get text byte
+	beq	99$			; zero - exit
+	sub	#'0, R1			; relative to '0'
+	asl	R1			; *8 bytes (character font size)
+	asl	R1
+	asl	R1
+	add	#Font8, R1		; R1 = font data
+	.rept	8.			; out character
+	movb	(R1)+, (R5)
+	add	R2, R5
+	.endr
+	sub	#64.*2.*8.-2, R5	; advance vaddr
+	br	10$
+99$:	return 
+
+; put 2 digits string
+; R5 - where to put, R0 - number
+Digi2:
+	cmp	R0, #99.
+	blos	10$
+	mov	#99., R0
+10$:	movb	#'0, (R5)+
+	movb	#'0, (R5)+
+20$:	mov	R0, R1
+	clr	R0
+	div	#10., R0
+	add	#'0, R1
+	movb	R1, -(R5)
+	tst	R0
+	bne	20$
+	return
+
+; count fps
+CouFps:	mov	Frames, R0
+	mul	#50., R0
+	div	Tick50, R0
+	; R0=FPS R1=FPS%TICK50
+	mov	R1, -(SP)
+	mov	#MsgFp8, R5
+	call	Digi2
+	mov	(SP)+, R0	; convert %TICK50 to hundreds
+	mul	#100., R0	; *100/TICK50 = hundreds
+	div	Tick50, R0	;
+	mov	#MsgFp8+3, R5
+	call	Digi2
+	return
+
+
+Frames:		.word	0
+Tick50:		.word	0			; 50Hz ticks counter
+
+VAddr		= 40000
+VAden		= 127.*128. + VAddr 
+TablSize	= 64.
+Angle		= 16.				; Cos offset
+Variable	= Accums+6 
+
+Speed:	br	Begin				; Y
+	.WORD	36543, 1321			; timer2, timer1
+Accums: 
+
+Begin:	; Clone sine table
+	MOV	#Tabl+32., R1			; pointer to sine table
+	MOV	#32., R2
+10$:	MOVB	Tabl-1(R2), (R1)+
+	SOB	R2, 10$
+
+Loop:	MOV	#Accums, R3
+	CLR	(R3)+				; clear accums
+	CLR	(R3)+
+	TST	(R3)+
+	MOV	#100, R0			; mask
+Direct:	INCB	(R3)				; default Y
+	BNE	10$
+	XOR	R0, Direct			; DEC opcode: 5313, INC opcode: 5213
+10$:	MOV	(R3)+, (R3)			; set Y
+	MOV	(R3)+, (R3)			; set timer2
+	MOV	#5*128.+32+VAddr, R0		; screen address
+
+; render twister to screen
+Render:
+	MOV	#Speed, R4
+	MOV	#3, R3
+10$:	ADD	(R4)+, 4(R4)			; add speed to accum
+	ADC	14(R4)				; increment variable
+	SOB	R3, 10$
+
+	MOV	#Variable+6, R3			; pointer to variable array
+	MOV	(R3), R4			; get timer 1
+	CALL	Sin
+	SWAB	R5
+	ASL	R5
+	MOV	R5, Speed			; Y speed
+
+	MOV	-(R3), R4			; get timer 2
+	CALL	Sin
+	ADD	#32., R5
+	ASR	R5
+	ASR	R5
+	MOV	R5, R2				; horisontal shift
+
+	MOV	-(R3), R4			; get Y
+
+	MOV	R0, -(SP)			; set maximum
+	MOV	R0, -(SP)
+	ADD	#128., (SP)			; set minimum
+
+	MOV	#8., R3
+30$:	CALL	Sin				; R5=Sin(R4)
+	MOV	R5, R1
+	ASR	R1				; left coordinate
+	ADD	#Angle, R4			; 90 degrees offset
+	CALL	Sin				; R5=Sin(R4)
+	ASR	R5				; right coordinate
+	SUB	R1, R5				; length
+	BLE	70$
+	BIC	#177, R0			; new screen line
+	add	#32, R0
+	ADD	R2, R0				; horisontal shift
+	ADD	R1, R0
+	ADD	R1, R0
+	CMP	R0, (SP)			; minimum
+	BGT	40$
+	MOV	R0, (SP)			; set new minimum
+40$:	MOV	Color-2(R3), R1			; read colour
+50$:	MOV	R1, (R0)+
+	SOB	R5, 50$
+	CMP	R0, 2(SP)			; maximum
+	BLOS	60$
+	MOV	R0, 2(SP)			; set new maximum
+60$:	bis	#^B1111000011110000, -(R0)		; draw border
+70$:	dec	R3
+	SOB	R3, 30$
+	MOV	(SP)+, R5			; get minimum
+	clr	-(R5)				; erase left pixels
+	clr	-(R5)
+	clr	-(R5)
+	clr	-(R5)
+	MOV	(SP)+, R5			; get maxumum
+	clr	(R5)+				; erase right pixels
+	clr	(R5)+
+	clr	(R5)+
+	clr	(R5)
+
+	ADD	#128.*2, R0			; next screen line
+	cmp	R0, #VAden	
+	blo	Render				; end of screen?
+
+	inc	Frames
+	cmp	Frames, #50.
+	blo	Loop
+
+	; count and print fps
+	call	CouFps
+	clr	Frames
+	clr	Tick50
+	mov	#MsgFp8, R0
+	call	PriSt8
+	jmp	Loop
+
+; Sinus
+; input: R4 - angle
+; outpu: R5 - sinus
+Sin:	MOV	R4, R5
+	BIC	#177700, R5
+	MOVB	Tabl(R5), R5
+	return
+
+Color:	.word	^B1010101001010101, ^B0101010111111111
+	.word	^B1111111100000000, ^B1111111101010101
+
+Tabl:	.BYTE 63.,62.,62.,61.,60.,58.,56.,54.,52.,50.,48.,45.,42.,39.,37.,33.
+	.BYTE 31.,28.,25.,22.,19.,17.,14.,12.,10.,8.,6.,4.,3.,2.,2.,1.
+
+	.blkb	32.	; buffer for sinetable cloning
 
 
 ; registers for accessing vram (or ram12)
