@@ -13,8 +13,8 @@ PPUMain:
 	mov	#200, @#102
 
 	; clear screen
-	mov	#VAddr, @#177010
-	mov	#288.*64., R3
+	mov	#VAddr-64., @#177010
+	mov	#289.*64., R3
 10$:	clr	@#177014
 	clrb	@#177012
 	inc	@#177010
