@@ -106,7 +106,7 @@ Frames:		.word	0
 Tick50:		.word	0			; 50Hz ticks counter
 
 VAddr		= 20000
-VAden		= 255.*64. + VAddr 
+VAden		= 253.*64. + VAddr 
 TablSize	= 64.
 Angle		= 16.				; Cos offset
 Variable	= Accums+6 
@@ -131,7 +131,7 @@ Direct:	INCB	(R3)				; default Y
 	XOR	R0, Direct			; DEC opcode: 5313, INC opcode: 5213
 10$:	MOV	(R3)+, (R3)			; set Y
 	MOV	(R3)+, (R3)			; set timer2
-	MOV	#128.*64.+10+VAddr, R0		; screen address
+	MOV	#127.*64.+10+VAddr, R0		; screen address
 
 ; render twister to screen
 Render:

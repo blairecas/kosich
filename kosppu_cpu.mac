@@ -123,7 +123,7 @@ Direct:	INCB	(R3)				; default Y
 	XOR	R0, Direct			; DEC opcode: 5313, INC opcode: 5213
 10$:	MOV	(R3)+, (R3)			; set Y
 	MOV	(R3)+, (R3)			; set timer2
-	MOV	#5*128.+32+VAddr, R0		; screen address
+	MOV	#1*128.+32+VAddr, R0		; screen address
 
 ; render twister to screen
 Render:
