@@ -1,1 +1,1 @@
-..\..\macro11\UkncComSender.exe COM3 .\release\kosich.sav 57600
+..\scripts\uknccomsender.exe COM3 .\release\kosppu.sav 57600

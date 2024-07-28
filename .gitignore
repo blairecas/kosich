@@ -1,5 +1,4 @@
-.vscode
-.gitignore
-_*.lst
-_*.mac
-
+_*.*
+*.log
+system.dsk
+rt11.exe
