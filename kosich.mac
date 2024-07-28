@@ -163,12 +163,12 @@ PPLEN:	.WORD	0	; length in words
 ; send command to PPU with exch array
 PPSEN:	mov	R0, -(SP)
 	mov	R1, -(SP)
-	mov	#PPMSG, R0	; array address
-	mov	#5, R1		; bytes to send+1 (sending from @#PP_MSG)
+	mov	#PPMSG, R0		; array address
+	mov	#5, R1			; bytes to send+1 (sending from @#PP_MSG)
 	br	1$
 2$:	movb	(R0)+, @#176676
-1$:	tstb	@#176674	; test if we are ready to send
-	bpl	1$		; cycle if >= 0 (not set last bit in byte)
+1$:	tstb	@#176674		; test if we are ready to send
+	bpl	1$			; cycle if >= 0 (not set last bit in byte)
 	sob	R1, 2$
 	mov	(SP)+, R1
 	mov	(SP)+, R0
@@ -177,24 +177,24 @@ PPSEN:	mov	R0, -(SP)
 ; send and start PPU code
 ; R4 - start addr in CPU
 ; R5 - length / 2
-PPRUN:	movb	#1, PPCMD	; 1 - allocate memory
+PPRUN:	movb	#1, PPCMD		; 1 - allocate memory
 	mov	R5, PPLEN
 	call	PPSEN
-	tstb	PPARR		; test if allocate success
-	beq	1$		; 0 - OK
+	tstb	PPARR			; test if allocate success
+	beq	1$			; 0 - OK
 	mov	#Msg010, R0
 	call	PriStr
-	.exit			; fatal error - out of memory in PPU
-1$:	movb	#20, PPCMD	; 20 - write to PPU mem
+	.exit				; fatal error - out of memory in PPU
+1$:	movb	#20, PPCMD		; 20 - write to PPU mem
 	mov	R5, PPLEN
 	mov 	R4, PPACP
 	call	PPSEN
-	movb	#30, PPCMD	; 30 - run
+	movb	#30, PPCMD		; 30 - run
 	call	PPSEN
 	return
 
 ; release PPU memory in case of something..
-PPRELE:	movb	#2, PPCMD	; 2 - release memory
+PPRELE:	movb	#2, PPCMD		; 2 - release memory
 	call	PPSEN
 	return
 
@@ -203,7 +203,22 @@ PPRELE:	movb	#2, PPCMD	; 2 - release memory
 ; // PPU first phase 
 ; //////////////////////////////////////////////////////////////////////////////
 
-PPUSTA:	mov	PC, R0
+PPUSTA:
+	; damn that hacks - need to correct memory descriptors
+	mov	PC, R0
+	add	#PpuSta-., R0		; start of program
+	mov	#PpuEnd-PpuSta, -(R0)	; write length of current PPU code block
+	sub	#4, R0			; addr of our descriptor
+	mov	PC, R1
+	add	#PpuEnd-., R1		; end of program
+	mov	#77772, R2
+	sub	R1, R2			; length of free block (assume our program is last though it's incorrect)
+	clr	(R1)+			; 'free'
+	mov	R0, (R1)+		; addr of previous descriptor
+	mov	R2, (R1)+		; length of free mem
+
+	; grab keyboard int
+	mov	PC, R0
 	add	#INTKB1-., R0		; keyboard interrupt addr
 	mov	@#300, BKW300		; replace keyboard interrupt
 	mov	R0, @#300
