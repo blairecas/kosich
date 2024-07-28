@@ -2,8 +2,11 @@ KOSICH
 ======
 
 Adaptation for UKNC (MS-0511) computer from 256-byte BK-0010 demo.
-Use disk image kosich.dsk with UKNC emulator (it will autolaunch).
-Or copy /release/kosich.sav to your disk image.
+Use disk image kosich.dsk with UKNC emulator.
+
+/release/kosich.sav - more or less like original
+/release/kosic2.sav - 50fps 8-colors version
+/release/kosppu.sav - two kosi4ka simultaneously running on both processors
 
 BK-0010 original: https://www.pouet.net/prod.php?which=90339
 Original readme.txt:

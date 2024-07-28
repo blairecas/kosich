@@ -6,6 +6,9 @@
 
 @include kosppu_ppu_header.mac
 
+C_VADDR	 = 20000
+C_SCRWID = 64.
+
 PPUMain:
 	mtps	#200
 	
@@ -13,8 +16,8 @@ PPUMain:
 	mov	#200, @#102
 
 	; clear screen
-	mov	#VAddr-64., @#177010
-	mov	#258.*64., R3
+	mov	#C_VADDR-C_SCRWID, @#177010
+	mov	#258.*C_SCRWID, R3
 10$:	clr	@#177014
 	clrb	@#177012
 	inc	@#177010
@@ -28,9 +31,24 @@ RtiAdr:	rti
 
 ; vsync interrupt
 VsyInt:	inc	Tick50
-	rti
+	cmp	Tick50, #500.
+	blo	99$
+	mov	R0, -(SP)
+	mov	R1, -(SP)
+	mov	R2, -(SP)
+	mov	R5, -(SP)
+	call	Digi3
+	call	Prist8
+	clr	Tick50
+	clr	Frames
+	mov	(SP)+, R5
+	mov	(SP)+, R2
+	mov	(SP)+, R1
+	mov	(SP)+, R0
+99$:	rti
 
-MsgFp8:	.asciz	/00:00/
+
+MsgFp8:	.asciz	/00:0/
 	.even
 
 Font8:	.byte	0, 76, 147, 147, 147, 147, 177, 76
@@ -48,54 +66,62 @@ Font8:	.byte	0, 76, 147, 147, 147, 147, 177, 76
 
 ; print string
 ; R0 - text addr
-PriSt8:	mov	#12.*64.+Vaddr+2, R5
-	mov	#64., R2		; vaddr addition
-10$:	movb	(R0)+, R1		; get text byte
-	beq	99$			; zero - exit
-	sub	#'0, R1			; relative to '0'
-	asl	R1			; *8 bytes (character font size)
+PriSt8:	mov	#MsgFp8, R0
+	mov	#12.*C_SCRWID+2+C_VADDR, R5
+	mov	#64., R2			; vaddr addition
+10$:	movb	(R0)+, R1			; get text byte
+	beq	99$				; zero - exit
+	sub	#'0, R1				; relative to '0'
+	asl	R1				; *8 bytes (character font size)
 	asl	R1
 	asl	R1
-	add	#Font8, R1		; R1 = font data
-	.rept	8.			; out character
+	add	#Font8, R1			; R1 = font data
+	.rept	8.				; out character
 	movb	(R1)+, (R5)
 	add	R2, R5
 	.endr
-	sub	#64.*8.-1, R5		; advance vaddr
+	sub	#8.*C_SCRWID-1, R5		; advance vaddr
 	br	10$
 99$:	return 
 
-; put 2 digits string
-; R5 - where to put, R0 - number
-Digi2:
-	cmp	R0, #99.
+; put 2.1 digits string to MsgFp8, R0 - number
+Digi3:	mov	Frames, R0
+	mov	#MsgFp8, R5
+	cmp	R0, #999.
 	blos	10$
-	mov	#99., R0
-10$:	movb	#'0, (R5)+
-	movb	#'0, (R5)+
-20$:	mov	R0, R1
-	clr	R0
-	div	#10., R0
-	add	#'0, R1
-	movb	R1, -(R5)
-	tst	R0
-	bne	20$
+	mov	#999., R0
+10$:	mov	#100., R2
+	call	100$
+	mov	#10., R2
+	call	100$
+	inc	R5
+	add	#'0, R0
+	movb	R0, (R5)
+	return
+100$:	mov	#'0, R1
+110$:	cmp	R0, R2
+	blo	120$
+	sub	R2, R0
+	inc	R1
+	br	110$
+120$:	movb	R1, (R5)+
 	return
 
 ; count fps
-CouFps:	mov	Frames, R0
-	mul	#50., R0
-	div	Tick50, R0
-	; R0=FPS R1=FPS%TICK50
-	mov	R1, -(SP)
-	mov	#MsgFp8, R5
-	call	Digi2
-	mov	(SP)+, R0	; convert %TICK50 to hundreds
-	mul	#100., R0	; *100/TICK50 = hundreds
-	div	Tick50, R0	;
-	mov	#MsgFp8+3, R5
-	call	Digi2
-	return
+;CouFps:	
+;	mov	Frames, R0
+;	mul	#50., R0
+;	div	Tick50, R0
+;	; R0=FPS R1=FPS%TICK50
+;	mov	R1, -(SP)
+;	mov	#MsgFp8, R5
+;	call	Digi2
+;	mov	(SP)+, R0	; convert %TICK50 to hundreds
+;	mul	#100., R0	; *100/TICK50 = hundreds
+;	div	Tick50, R0	;
+;	mov	#MsgFp8+3, R5
+;	call	Digi2
+;	return
 
 
 ; ////////////////////////////////////////////////////////////////////////////////////
@@ -103,10 +129,9 @@ CouFps:	mov	Frames, R0
 ; ////////////////////////////////////////////////////////////////////////////////////
 
 Frames:		.word	0
+Lines:		.word	64.			; lines to render
 Tick50:		.word	0			; 50Hz ticks counter
 
-VAddr		= 20000
-VAden		= 253.*64. + VAddr 
 TablSize	= 64.
 Angle		= 16.				; Cos offset
 Variable	= Accums+6 
@@ -121,7 +146,8 @@ Begin:	; Clone sine table
 10$:	MOVB	Tabl-1(R2), (R1)+
 	SOB	R2, 10$
 
-Loop:	MOV	#Accums, R3
+Loop:	mov	#64., Lines
+	MOV	#Accums, R3
 	CLR	(R3)+				; clear accums
 	CLR	(R3)+
 	TST	(R3)+
@@ -131,11 +157,10 @@ Direct:	INCB	(R3)				; default Y
 	XOR	R0, Direct			; DEC opcode: 5313, INC opcode: 5213
 10$:	MOV	(R3)+, (R3)			; set Y
 	MOV	(R3)+, (R3)			; set timer2
-	MOV	#127.*64.+10+VAddr, R0		; screen address
+	MOV	#128.*C_SCRWID+10+C_VADDR, R0	; screen address
 
 ; render twister to screen
-Render:
-	MOV	#Speed, R4
+Render:	MOV	#Speed, R4
 	MOV	#3, R3
 10$:	ADD	(R4)+, 4(R4)			; add speed to accum
 	ADC	14(R4)				; increment variable
@@ -160,6 +185,7 @@ Render:
 	MOV	R0, -(SP)			; set maximum
 	MOV	R0, -(SP)
 	ADD	#77, (SP)			; set minimum
+
 	MOV	#4, R3
 30$:	CALL	Sin				; R5=Sin(R4)
 	MOV	R5, R1
@@ -194,22 +220,12 @@ Render:
 	MOVB	R3, (R5)+
 	MOV	R3, (R5)
 
-	ADD	#64.*2, R0			; next screen line
-	cmp	R0, #VAden	
-	blo	Render				; end of screen?
+	ADD	#2*C_SCRWID, R0			; next screen line
+	dec	Lines
+	bne	Render
 
 	inc	Frames
-	cmp	Frames, #50.
-	blo	Loop
-
-	; count and print fps
-	call	CouFps
-	clr	Frames
-	clr	Tick50
-	mov	#MsgFp8, R0
-	call	PriSt8
-	jmp	Loop
-
+	br	Loop
 
 ; Sinus
 ; input: R4 - angle
