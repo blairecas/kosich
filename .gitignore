@@ -1,4 +1,6 @@
 _*.*
+*.lst
+*.obj
 *.log
 system.dsk
 rt11.exe

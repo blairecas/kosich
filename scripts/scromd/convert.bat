@@ -1,0 +1,1 @@
+php.exe -f ./convert_map.php

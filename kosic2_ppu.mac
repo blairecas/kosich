@@ -102,7 +102,7 @@ VsyCnt:	.word	0
 ; // Data tables
 ; //////////////////////////////////////////////
 
-@include twstbl.mac
+@include kosic2_twstbl.mac
 
 Alp2Vm:
 	.word	20000, 20050, 20120, 20170, 20240, 20310, 20360, 20430, 20500, 20550
@@ -161,6 +161,6 @@ RotTbl:
 	.byte	1, 0, 0, 0, 0, 0 
 	.even
 
-@include vramppu.mac
+@include kosic2_vramppu.mac
 
 	.end	Start
