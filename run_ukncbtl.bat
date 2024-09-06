@@ -1,1 +1,1 @@
-start ..\..\ukncbtl\ukncbtl /autostart /disk0:C:\Projects\uknc\00_code\kosich\kosich.dsk /boot1
+start ..\..\ukncbtl\ukncbtl /autostart /disk0:..\kosich\kosich.dsk /boot1

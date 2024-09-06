@@ -26,17 +26,16 @@ Start:	mtps	#200
 
 
 ; vsync interrupt
-VsyInt:	inc	Tick50
-	cmp	Tick50, #500.
-	blo	99$
+VsyInt:	dec	Tick50
+	bne	99$
 	mov	R0, -(SP)
 	mov	R1, -(SP)
 	mov	R2, -(SP)
 	mov	R5, -(SP)
 	call	Digi3
 	call	Prist8
-	clr	Tick50
 	clr	Frames
+	mov	#500., Tick50
 	mov	(SP)+, R5
 	mov	(SP)+, R2
 	mov	(SP)+, R1
@@ -106,7 +105,7 @@ Digi3:	mov	Frames, R0
 
 Frames:		.word	0
 Lines:		.word	64.
-Tick50:		.word	0			; 50Hz ticks counter
+Tick50:		.word	500.			; 50Hz ticks counter
 
 TablSize	= 64.
 Angle		= 16.				; Cos offset
