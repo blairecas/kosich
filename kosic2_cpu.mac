@@ -36,6 +36,9 @@ Start:	mtps	#200
 	sob	R3, .-2
 
 	; DI HALT ^_^
+	mov	#VsyInt, @#100
+	clr	@#102
+
 	mtps	#0
 	br	.
 
@@ -55,6 +58,11 @@ SetVreg:
 	mov	#176640, R4
 	mov	#176642, R5
 	return	
+
+; vsync interrupt
+VsyInt:	inc	(PC)+
+VsyCnt:	.word	0
+	rti
 
 
 ; //////////////////////////////////////////////////////////////////////////////

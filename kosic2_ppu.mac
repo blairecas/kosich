@@ -28,6 +28,7 @@ PPUMain:
 	sob	R3, 10$
 
 	mov	#VsyInt, @#100
+	clr	@#102
 
 	; set 'all done' flag for CPU
 	mov	#PpuCommand/2, @#177010
