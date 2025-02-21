@@ -38,10 +38,9 @@ PPUMain:
 
 
 ; rotate lines
-Rotate:
-;	tst	VsyCnt				; wait for vsync
-;	beq	Rotate
-;	clr	VsyCnt
+Rotate:	tst	VsyCnt				; wait for vsync
+	beq	Rotate
+	clr	VsyCnt
 
 	inc	Rotat0				; first line rotation tick
 

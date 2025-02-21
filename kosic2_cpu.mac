@@ -36,6 +36,7 @@ Start:	mtps	#200
 	sob	R3, .-2
 
 	; DI HALT ^_^
+	mtps	#0
 	br	.
 
 ; print string with channel 0
