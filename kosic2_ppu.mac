@@ -27,8 +27,13 @@ PPUMain:
 	add	#8., R4				; skip normal line
 	sob	R3, 10$
 
-	; and .. go
 	mov	#VsyInt, @#100
+
+	; set 'all done' flag for CPU
+	mov	#PpuCommand/2, @#177010
+	clr	@#177014
+
+	; and .. go
 	mtps	#0
 
 

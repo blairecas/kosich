@@ -38,7 +38,7 @@ if %ERRORLEVEL% NEQ 0 ( exit /b )
 ..\scripts\rt11dsk.exe a ..\..\03_dsk\hdd.dsk .\release\kosppu.sav >NUL
 
 del _kosppu_cpu.mac
-del _kosppu_cpu.lst
+rem del _kosppu_cpu.lst
 del _kosppu_ppu.mac
 del _kosppu_ppu.lst
 

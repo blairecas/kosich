@@ -6,8 +6,9 @@
 
 @include kosppu_ppu_header.mac
 
-C_VADDR	 = 20000
-C_SCRWID = 64.
+C_VADDR	 	= 20000
+C_SCRWID 	= 64.
+PpuCommand 	= 157776
 
 PPUMain:
 	mtps	#200
@@ -22,6 +23,10 @@ PPUMain:
 	clrb	@#177012
 	inc	@#177010
 	sob	R3, 10$
+
+	; all is set - signal to CPU
+	mov	#PpuCommand/2, @#177010
+	clr	@#177014
 
 	mtps	#0
 	jmp	Speed

@@ -129,6 +129,8 @@ PPULoaderEnd:
 
 ; send PPU code to VRAM and start PPU Loader
 StartPPU:
+	; set 'wait' flag
+	mov	#177777, @#PpuCommand
 	; put PPU code to VRAM
 	call	SetVreg
 	; clear vram first
@@ -148,8 +150,9 @@ StartPPU:
 	mov	#PPULoaderStart, R4
 	mov	#<PPULoaderEnd-PPULoaderStart/2>, R5
 	call	PPRUN
-	; clear PPU command just in case
-	clr	PpuCommand
+	; wait for PPU to finish init
+10$:	tst	@#PpuCommand
+	bne	10$
 	return
 
 ; //////////////////////////////////////////////////////////////
